@@ -1,0 +1,11 @@
+# Sanal Ortam
+venv/
+
+# Firebase VIP Giriş Kartı (Şifre) --- Veritabanının şifresinin internete sızmasını kesin olarak önler.
+serviceAccountKey.json
+
+# Python Geçici Dosyaları
+__pycache__/
+
+# Mac Sistem Dosyaları (Gereksiz kalabalık yapmaması için)
+.DS_Store
