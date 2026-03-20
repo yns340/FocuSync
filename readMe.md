@@ -15,7 +15,7 @@
 
 <div align="center">
 
-# 🌐 ─────── SANAL ORTAM KULLANIMI ─────── 🌐
+# 🌐 SANAL ORTAM KULLANIMI 🌐
 
 </div>
 
@@ -101,7 +101,7 @@ Projemizde bir `.gitignore` dosyası var ve içine `venv/` ile `serviceAccountKe
 
 <div align="center">
 
-# 🗄️ ─────── VERİTABANI MİMARİSİ ─────── 🗄️
+# 🗄️ VERİTABANI MİMARİSİ 🗄️
 
 </div>
 
