@@ -223,7 +223,7 @@ Firestore
 | `course_name`      | string    | Ders adı            |
 | `difficulty_level` | number    | Zorluk seviyesi     |
 | `exam_date`        | timestamp | Sınav tarihi        |
-| `user_id`          | string    | Kullanıcı referansı |
+| **`user_id`**      | string    | Kullanıcı referansı |
 | `weekly_hours`     | number    | Haftalık ders saati |
 
 ```json
@@ -244,17 +244,17 @@ Firestore
 | ---------------- | --------- | -------------------------- |
 | `schedule_name`  | string    | Program dönem adı          |
 | `updated_at`     | timestamp | Programın yüklenme tarihi  |
-| `user_id`        | string    | Kullanıcı referansı        |
+| **`user_id`**    | string    | Kullanıcı referansı        |
 | `weekly_routine` | object    | Günlere göre ders programı |
 
 #### `weekly_routine[gun][]` — Dizi Elemanı
 
-| Alan         | Tip    | Açıklama        |
-| ------------ | ------ | --------------- |
-| `course_id`  | string | Ders referansı  |
-| `start_time` | string | Başlangıç saati |
-| `end_time`   | string | Bitiş saati     |
-| `type`       | string | Etkinlik türü   |
+| Alan            | Tip    | Açıklama        |
+| --------------- | ------ | --------------- |
+| **`course_id`** | string | Ders referansı  |
+| `start_time`    | string | Başlangıç saati |
+| `end_time`      | string | Bitiş saati     |
+| `type`          | string | Etkinlik türü   |
 
 ```json
 {
@@ -315,15 +315,15 @@ Firestore
 | Alan              | Tip       | Açıklama                        |
 | ----------------- | --------- | ------------------------------- |
 | `plan_start_date` | timestamp | Planın başlangıç tarihi         |
-| `user_id`         | string    | Kullanıcı referansı             |
+| **`user_id`**     | string    | Kullanıcı referansı             |
 | `weekly_sessions` | object    | Günlere göre çalışma oturumları |
 
 #### `weekly_sessions[gun][]` — Dizi Elemanı
 
 | Alan               | Tip     | Açıklama                       |
 | ------------------ | ------- | ------------------------------ |
-| `session_id`       | string  | Oturum ID (örn: `session1`, …) |
-| `course_id`        | string  | Ders referansı                 |
+| **`session_id`**   | string  | Oturum ID (örn: `session1`, …) |
+| **`course_id`**    | string  | Ders referansı                 |
 | `planned_duration` | number  | Planlanan süre (dakika)        |
 | `is_completed`     | boolean | Tamamlandı mı?                 |
 
@@ -396,15 +396,15 @@ Firestore
 
 ### 🎯 FocusSessions
 
-| Alan                    | Tip       | Açıklama                         |
-| ----------------------- | --------- | -------------------------------- |
-| `study_plan_session_id` | string    | StudyPlan `session_id` referansı |
-| `course_id`             | string    | Ders referansı                   |
-| `actual_focus_time`     | number    | Gerçek odak süresi (dakika)      |
-| `focus_score`           | number    | Odak skoru                       |
-| `status`                | string    | Durum                            |
-| `timestamp`             | timestamp | Oturum zamanı                    |
-| `user_id`               | string    | Kullanıcı referansı              |
+| Alan                        | Tip       | Açıklama                         |
+| --------------------------- | --------- | -------------------------------- |
+| **`study_plan_session_id`** | string    | StudyPlan `session_id` referansı |
+| **`course_id`**             | string    | Ders referansı                   |
+| `actual_focus_time`         | number    | Gerçek odak süresi (dakika)      |
+| `focus_score`               | number    | Odak skoru                       |
+| `status`                    | string    | Durum                            |
+| `timestamp`                 | timestamp | Oturum zamanı                    |
+| **`user_id`**               | string    | Kullanıcı referansı              |
 
 ```json
 {
@@ -422,13 +422,13 @@ Firestore
 
 ### 🚫 Violations
 
-| Alan               | Tip       | Açıklama                     |
-| ------------------ | --------- | ---------------------------- |
-| `focus_session_id` | string    | FocusSession referansı       |
-| `app_name`         | string    | İhlal eden uygulama adı      |
-| `duration`         | number    | İhlal süresi (saniye/dakika) |
-| `timestamp`        | timestamp | İhlal zamanı                 |
-| `user_id`          | string    | Kullanıcı referansı          |
+| Alan                   | Tip       | Açıklama                     |
+| ---------------------- | --------- | ---------------------------- |
+| **`focus_session_id`** | string    | FocusSession referansı       |
+| `app_name`             | string    | İhlal eden uygulama adı      |
+| `duration`             | number    | İhlal süresi (saniye/dakika) |
+| `timestamp`            | timestamp | İhlal zamanı                 |
+| **`user_id`**          | string    | Kullanıcı referansı          |
 
 ```json
 {
@@ -446,12 +446,12 @@ Firestore
 
 ### 👥 Rol Bazlı Dağılım
 
-| Geliştirici      | Sorumluluk     | Fonksiyonlar                       |
-| ---------------- | -------------- | ---------------------------------- |
-| Zeynep Yamaç     | Algoritma      | `add_study_plan()`, `add_course()` |
-| Mehmet Akif Türk | Görüntü İşleme | `add_focus_session()`              |
-| Kerem Kapısız    | Arayüz         | `add_violation()`                  |
-| Yunus Recepoğlu  | DB & Otomasyon | `add_base_schedule()`              |
+| Geliştirici          | Sorumluluk                 | Fonksiyonlar (db_manager.py)                                                                                                                                        |
+| :------------------- | :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Zeynep Yamaç**     | Akıllı Algoritma           | `add_course()`, `save_study_plan()`, `get_study_plan()`, `get_courses()`, `update_course_difficulty()`                                                              |
+| **Mehmet Akif Türk** | Görüntü İşleme (Kamera)    | `add_focus_session()`, `mark_session_completed()`                                                                                                                   |
+| **Kerem Kapısız**    | Beyaz Liste & İhlal Takibi | `add_violation()`                                                                                                                                                   |
+| **Yunus Recepoğlu**  | DB, OCR & Core Arayüz      | `login_user()`, `register_user()`, `get_user_profile()`, `update_user_profile()`, `get_dashboard_stats()`, `save_schedule()`, `get_schedule()`, `delete_schedule()` |
 
 ---
 
