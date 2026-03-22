@@ -189,13 +189,20 @@ Firestore
 | Alan       | Tip    | Açıklama        |
 |------------|--------|-----------------|
 | `email`    | string | Kullanıcı email |
+| `name`     | string | Kullanıcı isim  |
 | `password` | string | Şifre           |
 | `role`     | string | Kullanıcı rolü  |
+| `school`   | string | Kullanıcı okul  |
+| `surname`  | string | Kullanıcı soyad |
+
 
 ```json
 {
   "email": "string",
+  "name": "string",
   "password": "string",
+  "role": "string"
+  "school": "string"
   "role": "string"
 }
 ```
