@@ -1,6 +1,7 @@
 <div align="center">
 
 # 🎯 FocuSync
+
 ### Geliştirici Kurulum Rehberi
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
@@ -33,9 +34,9 @@ Böylece kimsenin bilgisayarına gereksiz paket inmeyecek, her şey sadece bu pr
 
 Terminalinizi (veya Komut İstemini) proje klasörünün içinde açın ve işletim sisteminize göre şu komutu çalıştırarak yalıtılmış çalışma odamızı inşa edin:
 
-| İşletim Sistemi | Komut |
-|----------------|-------|
-| 🪟 Windows | `python -m venv venv` |
+| İşletim Sistemi   | Komut                  |
+| ----------------- | ---------------------- |
+| 🪟 Windows        | `python -m venv venv`  |
 | 🍎 Mac / 🐧 Linux | `python3 -m venv venv` |
 
 > _Bu komut klasörde `venv` adında bir dosya oluşturacak. Bu dosyanın içine manuel olarak **ASLA** dokunmuyoruz._
@@ -46,9 +47,9 @@ Terminalinizi (veya Komut İstemini) proje klasörünün içinde açın ve işle
 
 Oluşturduğumuz bu ortama girmeden paket indiremeyiz veya kod çalıştıramayız. Yine işletim sisteminize göre şu komutu çalıştırın:
 
-| İşletim Sistemi | Komut |
-|----------------|-------|
-| 🪟 Windows | `venv\Scripts\activate` |
+| İşletim Sistemi   | Komut                      |
+| ----------------- | -------------------------- |
+| 🪟 Windows        | `venv\Scripts\activate`    |
 | 🍎 Mac / 🐧 Linux | `source venv/bin/activate` |
 
 > _Başarılı olduğunuzda terminal satırınızın en başında `(venv)` yazısını göreceksiniz. Kod yazarken ve çalıştırırken hep bu ortamın içinde olmalısınız._
@@ -135,6 +136,7 @@ Geliştirme sürecini hızlandırmak ve maksimum güvenlik sağlamak amacıyla *
 <td width="33%" align="center">
 
 ### ✅ Tam Yetki
+
 Tüm geliştiriciler **Database Admin** yetkisine sahiptir.  
 Koleksiyonlara doğrudan erişim sağlanır.
 
@@ -142,6 +144,7 @@ Koleksiyonlara doğrudan erişim sağlanır.
 <td width="33%" align="center">
 
 ### 🔒 Güçlü Güvenlik
+
 Veritabanı dış dünyaya **tamamen kapalıdır**.  
 Sadece `serviceAccountKey.json` dosyasına sahip kişiler erişebilir.
 
@@ -149,6 +152,7 @@ Sadece `serviceAccountKey.json` dosyasına sahip kişiler erişebilir.
 <td width="33%" align="center">
 
 ### ⚡ Hız ve Verimlilik
+
 Authentication süreçleri yok.  
 Doğrudan veri işlemleri yapılabilir.  
 Geliştirme süreci hızlanır.
@@ -186,24 +190,27 @@ Firestore
 
 ### 👤 Users
 
-| Alan       | Tip    | Açıklama        |
-|------------|--------|-----------------|
-| `email`    | string | Kullanıcı email |
-| `name`     | string | Kullanıcı isim  |
-| `password` | string | Şifre           |
-| `role`     | string | Kullanıcı rolü  |
-| `school`   | string | Kullanıcı okul  |
-| `surname`  | string | Kullanıcı soyad |
-
+| Alan               | Tip      | Açıklama                        |
+| ------------------ | -------- | ------------------------------- |
+| `allowed_apps`     | string[] | Kullanıcının whitelist izinleri |
+| `daily_study_goal` | number   | Kullanıcı çalışma süresi hedefi |
+| `email`            | string   | Kullanıcı email                 |
+| `name`             | string   | Kullanıcı isim                  |
+| `password`         | string   | Şifre                           |
+| `role`             | string   | Kullanıcı rolü                  |
+| `school`           | string   | Kullanıcı okul                  |
+| `surname`          | string   | Kullanıcı soyad                 |
 
 ```json
 {
+  "allowed_apps": ["string"]
+  "daily_study_goal": "number",
   "email": "string",
   "name": "string",
   "password": "string",
   "role": "string"
   "school": "string"
-  "role": "string"
+  "surname": "string"
 }
 ```
 
@@ -212,11 +219,12 @@ Firestore
 ### 📚 Courses
 
 | Alan               | Tip       | Açıklama            |
-|--------------------|-----------|---------------------|
+| ------------------ | --------- | ------------------- |
 | `course_name`      | string    | Ders adı            |
-| `difficulty_level` | string    | Zorluk seviyesi     |
+| `difficulty_level` | number    | Zorluk seviyesi     |
 | `exam_date`        | timestamp | Sınav tarihi        |
 | `user_id`          | string    | Kullanıcı referansı |
+| `weekly_hours`     | number    | Haftalık ders saati |
 
 ```json
 {
@@ -224,6 +232,7 @@ Firestore
   "difficulty_level": "string",
   "exam_date": "timestamp",
   "user_id": "string"
+  "weekly_hours": "number",     // Örn: 4 (Okuldaki ders sıklığı/kredisi)
 }
 ```
 
@@ -231,23 +240,71 @@ Firestore
 
 ### 📅 Schedules
 
-| Alan          | Tip    | Açıklama            |
-|---------------|--------|---------------------|
-| `day`         | string | Gün                 |
-| `course_name` | string | Ders adı            |
-| `start_time`  | string | Başlangıç saati     |
-| `end_time`    | string | Bitiş saati         |
-| `type`        | string | Ders tipi           |
-| `user_id`     | string | Kullanıcı referansı |
+| Alan             | Tip       | Açıklama                   |
+| ---------------- | --------- | -------------------------- |
+| `schedule_name`  | string    | Program dönem adı          |
+| `updated_at`     | timestamp | Programın yüklenme tarihi  |
+| `user_id`        | string    | Kullanıcı referansı        |
+| `weekly_routine` | object    | Günlere göre ders programı |
+
+#### `weekly_routine[gun][]` — Dizi Elemanı
+
+| Alan         | Tip    | Açıklama        |
+| ------------ | ------ | --------------- |
+| `course_id`  | string | Ders referansı  |
+| `start_time` | string | Başlangıç saati |
+| `end_time`   | string | Bitiş saati     |
+| `type`       | string | Etkinlik türü   |
 
 ```json
 {
-  "day": "string",
-  "course_name": "string",
-  "start_time": "string",
-  "end_time": "string",
-  "type": "string",
+  "schedule_name": "string",
+  "updated_at": "timestamp",
   "user_id": "string"
+  "weekly_routine": {
+    "Pazartesi": [
+      {
+        "course_id": "string",
+        "start_time": "string",
+        "end_time": "string",
+        "type": "string"
+      }
+    ],
+    "Salı": [
+      {
+        "course_id": "string",
+        "start_time": "string",
+        "end_time": "string",
+        "type": "string"
+      }
+    ],
+    "Çarşamba": [
+      {
+        "course_id": "string",
+        "start_time": "string",
+        "end_time": "string",
+        "type": "string"
+      }
+    ],
+    "Perşembe": [
+      {
+        "course_id": "string",
+        "start_time": "string",
+        "end_time": "string",
+        "type": "string"
+      }
+    ],
+    "Cuma": [
+      {
+        "course_id": "string",
+        "start_time": "string",
+        "end_time": "string",
+        "type": "string"
+      }
+    ],
+    "Cumartesi": [],
+    "Pazar": []
+  }
 }
 ```
 
@@ -255,21 +312,83 @@ Firestore
 
 ### 🧠 StudyPlans
 
-| Alan                | Tip       | Açıklama            |
-|---------------------|-----------|---------------------|
-| `course_name`       | string    | Ders adı            |
-| `planned_date`      | timestamp | Planlanan tarih     |
-| `planned_duration`  | number    | Süre (dk)           |
-| `is_completed`      | boolean   | Tamamlandı mı       |
-| `user_id`           | string    | Kullanıcı referansı |
+| Alan              | Tip       | Açıklama                        |
+| ----------------- | --------- | ------------------------------- |
+| `plan_start_date` | timestamp | Planın başlangıç tarihi         |
+| `user_id`         | string    | Kullanıcı referansı             |
+| `weekly_sessions` | object    | Günlere göre çalışma oturumları |
+
+#### `weekly_sessions[gun][]` — Dizi Elemanı
+
+| Alan               | Tip     | Açıklama                       |
+| ------------------ | ------- | ------------------------------ |
+| `session_id`       | string  | Oturum ID (örn: `session1`, …) |
+| `course_id`        | string  | Ders referansı                 |
+| `planned_duration` | number  | Planlanan süre (dakika)        |
+| `is_completed`     | boolean | Tamamlandı mı?                 |
 
 ```json
 {
-  "course_name": "string",
-  "planned_date": "timestamp",
-  "planned_duration": "number",
-  "is_completed": "boolean",
+  "plan_start_date": "timestamp",
   "user_id": "string"
+  "weekly_sessions": {
+    "Pazartesi": [
+      {
+        "session_id": "string", //Firebase dizide id üretmez o yüzden kendimiz session1 olarak başlatırız...
+        "course_id": "string",
+        "planned_duration": "number",
+        "is_completed": "boolean"
+      }
+    ],
+    "Salı": [
+      {
+        "session_id": "string",
+        "course_id": "string",
+        "planned_duration": "number",
+        "is_completed": "boolean"
+      }
+    ],
+    "Çarşamba": [
+      {
+        "session_id": "string",
+        "course_id": "string",
+        "planned_duration": "number",
+        "is_completed": "boolean"
+      }
+    ],
+    "Perşembe": [
+      {
+        "session_id": "string",
+        "course_id": "string",
+        "planned_duration": "number",
+        "is_completed": "boolean"
+      }
+    ],
+    "Cuma": [
+      {
+        "session_id": "string",
+        "course_id": "string",
+        "planned_duration": "number",
+        "is_completed": "boolean"
+      }
+    ],
+    "Cumartesi": [
+      {
+        "session_id": "string",
+        "course_id": "string",
+        "planned_duration": "number",
+        "is_completed": "boolean"
+      }
+    ],
+    "Pazar": [
+      {
+        "session_id": "string",
+        "course_id": "string",
+        "planned_duration": "number",
+        "is_completed": "boolean"
+      }
+    ]
+  }
 }
 ```
 
@@ -277,20 +396,20 @@ Firestore
 
 ### 🎯 FocusSessions
 
-| Alan                | Tip       | Açıklama            |
-|---------------------|-----------|---------------------|
-| `study_plan_id`     | string    | Plan referansı      |
-| `course_name`       | string    | Ders adı            |
-| `actual_focus_time` | number    | Gerçek süre         |
-| `focus_score`       | number    | Odak skoru          |
-| `status`            | string    | Durum               |
-| `timestamp`         | timestamp | Zaman               |
-| `user_id`           | string    | Kullanıcı referansı |
+| Alan                    | Tip       | Açıklama                         |
+| ----------------------- | --------- | -------------------------------- |
+| `study_plan_session_id` | string    | StudyPlan `session_id` referansı |
+| `course_id`             | string    | Ders referansı                   |
+| `actual_focus_time`     | number    | Gerçek odak süresi (dakika)      |
+| `focus_score`           | number    | Odak skoru                       |
+| `status`                | string    | Durum                            |
+| `timestamp`             | timestamp | Oturum zamanı                    |
+| `user_id`               | string    | Kullanıcı referansı              |
 
 ```json
 {
-  "study_plan_id": "string",
-  "course_name": "string",
+  "study_plan_session_id": "string", (weekly_sessions id lerine atanmalı)
+  "course_id": "string",
   "actual_focus_time": "number",
   "focus_score": "number",
   "status": "string",
@@ -303,17 +422,17 @@ Firestore
 
 ### 🚫 Violations
 
-| Alan         | Tip       | Açıklama            |
-|--------------|-----------|---------------------|
-| `session_id` | string    | Oturum ID           |
-| `app_name`   | string    | Uygulama adı        |
-| `duration`   | number    | Süre                |
-| `timestamp`  | timestamp | Zaman               |
-| `user_id`    | string    | Kullanıcı referansı |
+| Alan               | Tip       | Açıklama                     |
+| ------------------ | --------- | ---------------------------- |
+| `focus_session_id` | string    | FocusSession referansı       |
+| `app_name`         | string    | İhlal eden uygulama adı      |
+| `duration`         | number    | İhlal süresi (saniye/dakika) |
+| `timestamp`        | timestamp | İhlal zamanı                 |
+| `user_id`          | string    | Kullanıcı referansı          |
 
 ```json
 {
-  "session_id": "string",
+  "focus_session_id": "string",
   "app_name": "string",
   "duration": "number",
   "timestamp": "timestamp",
@@ -327,12 +446,12 @@ Firestore
 
 ### 👥 Rol Bazlı Dağılım
 
-| Geliştirici        | Sorumluluk      | Fonksiyonlar                         |
-|--------------------|-----------------|--------------------------------------|
-| Zeynep Yamaç       | Algoritma       | `add_study_plan()`, `add_course()`   |
-| Mehmet Akif Türk   | Görüntü İşleme  | `add_focus_session()`                |
-| Kerem Kapısız      | Arayüz          | `add_violation()`                    |
-| Yunus Recepoğlu    | DB & Otomasyon  | `add_base_schedule()`                |
+| Geliştirici      | Sorumluluk     | Fonksiyonlar                       |
+| ---------------- | -------------- | ---------------------------------- |
+| Zeynep Yamaç     | Algoritma      | `add_study_plan()`, `add_course()` |
+| Mehmet Akif Türk | Görüntü İşleme | `add_focus_session()`              |
+| Kerem Kapısız    | Arayüz         | `add_violation()`                  |
+| Yunus Recepoğlu  | DB & Otomasyon | `add_base_schedule()`              |
 
 ---
 
@@ -351,12 +470,12 @@ Firestore
 
 ## 🔚 Sistem Hedefi
 
-| Hedef | Açıklama |
-|-------|----------|
-| 🔒 Güvenlik    | Yetkisiz erişimin önlenmesi |
-| ⚡ Performans  | Hızlı ve verimli veri işleme |
-| 🧩 Modülerlik  | Bağımsız, genişletilebilir yapı |
-| 🛠️ Yönetim    | Kolay bakım ve güncelleme |
+| Hedef         | Açıklama                        |
+| ------------- | ------------------------------- |
+| 🔒 Güvenlik   | Yetkisiz erişimin önlenmesi     |
+| ⚡ Performans | Hızlı ve verimli veri işleme    |
+| 🧩 Modülerlik | Bağımsız, genişletilebilir yapı |
+| 🛠️ Yönetim    | Kolay bakım ve güncelleme       |
 
 ---
 
