@@ -10,13 +10,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+# Menü sıralaması ve isimler güncellendi
 NAV_ITEMS = [
-    ("🏠", "Dashboard",      "dashboard"),
-    ("📚", "Ders Programı",  "schedule"),
-    ("🎯", "Odak Modu",      "focus"),
-    ("🛡️", "Beyaz Liste",    "whitelist"),
-    ("📊", "İstatistikler",  "statistics"),
-    ("💡", "Öneriler",       "suggestions"),
+    ("🏠", "Dashboard",               "dashboard"),
+    ("📚", "Sabit Ders Programı",     "schedule"),
+    ("💡", "Önerilen Ders Programı",  "suggested_plan"),
+    ("📊", "Dersler",                 "courses"),
+    ("🎯", "Odak Modu",               "focus"),
+    ("🛡️", "Beyaz Liste",             "whitelist"),
 ]
 
 class MainWindow(QMainWindow):
@@ -29,7 +30,7 @@ class MainWindow(QMainWindow):
         self.resize(1400, 860)
         self._nav_buttons: dict[str, QPushButton] = {}
         self._build_ui()
-        self._navigate("dashboard") # Açılış sayfası tekrar Dashboard oldu
+        self._navigate("dashboard") 
 
     def _build_ui(self):
         central = QWidget()
@@ -99,33 +100,34 @@ class MainWindow(QMainWindow):
         sb.addWidget(logout_btn)
         root.addWidget(sidebar)
 
-        # ── Sayfaları Sisteme Kaydetme (TÜM SAYFALAR EKLENDİ) ─────────────
+        # ── Sayfaları Sisteme Kaydetme ─────────────
         self.stack = QStackedWidget()
 
-        from ui.dashboard_page  import DashboardPage
-        from ui.schedule_page   import SchedulePage
-        from ui.focus_page      import FocusPage
-        from ui.whitelist_page  import WhitelistPage
-        from ui.statistics_page import StatisticsPage
-        from ui.suggestions_page import SuggestionsPage
-        from ui.profile_page     import ProfilePage
+        from ui.dashboard_page       import DashboardPage
+        from ui.schedule_page        import SchedulePage
+        from ui.suggested_plan_page  import SuggestedPlanPage # Yeni isim
+        from ui.courses_page         import CoursesPage       # Yeni isim
+        from ui.focus_page           import FocusPage
+        from ui.whitelist_page       import WhitelistPage
+        from ui.profile_page         import ProfilePage
 
-        self.dashboard_page  = DashboardPage(self.user_id, self.db_manager)
-        self.schedule_page   = SchedulePage(self.user_id, self.db_manager)
-        self.focus_page      = FocusPage(self.user_id, self.db_manager)
-        self.whitelist_page  = WhitelistPage(self.user_id, self.db_manager)
-        self.statistics_page = StatisticsPage(self.user_id, self.db_manager)
-        self.suggestions_page= SuggestionsPage(self.user_id, self.db_manager)
-        self.profile_page     = ProfilePage(self.user_id, self.db_manager) 
+        self.dashboard_page      = DashboardPage(self.user_id, self.db_manager)
+        self.schedule_page       = SchedulePage(self.user_id, self.db_manager)
+        self.suggested_plan_page = SuggestedPlanPage(self.user_id, self.db_manager)
+        self.courses_page        = CoursesPage(self.user_id, self.db_manager)
+        self.focus_page          = FocusPage(self.user_id, self.db_manager)
+        self.whitelist_page      = WhitelistPage(self.user_id, self.db_manager)
+        self.profile_page        = ProfilePage(self.user_id, self.db_manager) 
 
+        # Sıralama güncellendi
         self._page_map = {
-            "dashboard":  (0, self.dashboard_page),
-            "schedule":   (1, self.schedule_page),
-            "focus":      (2, self.focus_page),
-            "whitelist":  (3, self.whitelist_page),
-            "statistics": (4, self.statistics_page),
-            "suggestions":(5, self.suggestions_page),
-            "profile":     (6, self.profile_page), # <-- YENİ EKLENEN SATIR
+            "dashboard":      (0, self.dashboard_page),
+            "schedule":       (1, self.schedule_page),
+            "suggested_plan": (2, self.suggested_plan_page),
+            "courses":        (3, self.courses_page),
+            "focus":          (4, self.focus_page),
+            "whitelist":      (5, self.whitelist_page),
+            "profile":        (6, self.profile_page),
         }
         
         for _, page in self._page_map.values():
@@ -137,6 +139,11 @@ class MainWindow(QMainWindow):
         if key not in self._page_map: return
         idx, page = self._page_map[key]
         self.stack.setCurrentIndex(idx)
+
+        # Gidilen sayfanın 'refresh' adında bir fonksiyonu varsa onu çalıştırır.
+        if hasattr(page, "refresh") and callable(page.refresh):
+            page.refresh()
+        
         for k, btn in self._nav_buttons.items():
             btn.setProperty("active", "true" if k == key else "false")
             btn.style().unpolish(btn); btn.style().polish(btn)

@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea
 )
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QFont
 from datetime import datetime
 
@@ -31,6 +31,7 @@ class DashboardPage(QWidget):
         self.user_id = user_id
         self.db_manager = db_manager
         self._build_ui()
+        self.refresh() # Sayfa açıldığında verileri otomatik çek
 
     def _build_ui(self):
         scroll = QScrollArea(self)
@@ -46,33 +47,56 @@ class DashboardPage(QWidget):
         lay.setContentsMargins(28, 24, 28, 24)
         lay.setSpacing(20)
 
+        # Başlık ve Tarih
         hdr = QHBoxLayout()
-        self.greeting_lbl = QLabel(f"Merhaba! (ID: {self.user_id})")
-        self.greeting_lbl.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
-        self.greeting_lbl.setStyleSheet("color:#e4e6ed;")
+        self.greeting_lbl = QLabel("MERHABA!")
+
+        # DİKKAT: setFont kullanmadık, boyutu (font-size: 64px) buraya yazdık!
+        self.greeting_lbl.setStyleSheet("""
+            font-family: 'Segoe UI';
+            font-size: 32px;
+            font-weight: bold;
+            color: #e4e6ed;
+            padding-bottom: 15px;
+            letter-spacing: 2px;
+        """)
+
         self.date_lbl = QLabel(datetime.now().strftime("%d %m %Y"))
-        self.date_lbl.setStyleSheet("color:#6b7280;font-size:12px;")
+        self.date_lbl.setStyleSheet("color:#6b7280;font-size:16px; font-weight:600;")
         hdr.addWidget(self.greeting_lbl); hdr.addStretch(); hdr.addWidget(self.date_lbl)
+        hdr.setAlignment(self.date_lbl, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)
         lay.addLayout(hdr)
 
-        info = QLabel("Dashboard verileri şu an boştur. db_manager.py içerisine 'Firebase'den Veri Çekme (Read)' fonksiyonları eklendiğinde bu alandaki grafikler dolacaktır.")
-        info.setStyleSheet("color:#ff6b35; font-size:12px; padding:10px; background:rgba(255,107,53,0.1); border-radius:8px;")
-        info.setWordWrap(True)
-        lay.addWidget(info)
-
-        # Boş İstatistik Kartları (Tasarım bozulmasın diye tutuldu)
+        # İstatistik Kartları
         stats_row = QHBoxLayout()
-        self.card_score   = MiniStatCard("🎯","ODAK SKORU",   "—",  "", "#00e5a0")
-        self.card_courses = MiniStatCard("📚","DERS SAYISI",   "—",  "", "#0099ff")
-        self.card_viol    = MiniStatCard("⚠️","İHLAL",        "—",  "", "#ff6b35")
-        self.card_time    = MiniStatCard("⏱️","ÇALIŞMA",      "—",  "", "#f59e0b")
-        for c in [self.card_score, self.card_courses, self.card_viol, self.card_time]:
+        self.card_score   = MiniStatCard("🎯", "ODAK SKORU", "%0", "", "#00e5a0")
+        self.card_courses = MiniStatCard("📚", "DERS SAYISI", "0", "", "#0099ff")
+        self.card_time    = MiniStatCard("⏱️", "ÇALIŞMA (Dk)", "0", "", "#f59e0b")
+        self.card_viol    = MiniStatCard("⚠️", "İHLAL", "0", "", "#ff6b35")
+        
+        for c in [self.card_score, self.card_courses, self.card_time, self.card_viol]:
             stats_row.addWidget(c)
+        
         lay.addLayout(stats_row)
         lay.addStretch()
 
     def set_user(self, user):
-        pass # Artık user listesi değil direkt user_id kullanıyoruz
+        pass
 
     def refresh(self):
-        pass # Read fonksiyonları gelene kadar pasif
+        """Firebase'den verileri çeker ve kartları günceller."""
+        success, data = self.db_manager.get_dashboard_stats(self.user_id)
+        
+        if success:
+            # 1. Kullanıcı adını güncelle
+            name = data.get("user_name", "")
+            if name:
+                self.greeting_lbl.setText(f"MERHABA, {name.upper()}!")
+            else:
+                self.greeting_lbl.setText(f"MERHABA! (ID: {self.user_id[:5]}...)") # ID uzunsa ilk 5 karakter
+
+            # 2. İstatistikleri Kartlara Yazdır
+            self.card_score.val_lbl.setText(f"%{data.get('avg_focus_score', 0)}")
+            self.card_courses.val_lbl.setText(str(data.get('course_count', 0)))
+            self.card_time.val_lbl.setText(str(data.get('total_study_time', 0)))
+            self.card_viol.val_lbl.setText(str(data.get('violation_count', 0)))
