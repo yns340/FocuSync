@@ -76,11 +76,15 @@ Sanal ortam oluşturduk diye yeni açacağımız kod dosyalarını (`.py`, `.md`
 - Terminalde `(venv)` yazması, dosyaların nereye kaydedileceğini değil; yazdığınız kodun bilgisayardaki Python ile değil, bu deponun içindeki kütüphanelerle çalıştırılacağını belirtir.
 
 ```
-📁 FocuSync/          ← Tüm .py dosyaları buraya
-├── 📁 venv/          ← Sanal kütüphaneler (!!!! BURAYA DOKUNULMAYACAK !!!!)
+📁 FocuSync/                      ← Tüm .py dosyaları buranın altına
+├── 📁 venv/                      ← Sanal kütüphaneler (!!!! BURAYA DOKUNULMAYACAK, EKLEMELER BURAYA YAPILMAYACAK !!!!)
+├── 📁 ui/
+├── 📄 db_manager.py              ← Tüm database işlemleri (Firebase Firestore) buradan yapılacak, ek bir db işlemi yapılmayacak
 ├── 📄 main.py
-├── 📄 requirements.txt
-└── 📄 .gitignore
+├── 📄 requirements.txt           ← Sanal ortama yüklenecek kütüphaneler (ihtiyacımız olan yeni kütüphaneler olursa buraya eklenmeli - diğerlerinin de güncel kütüphaneleri sanal ortamına yüklemesi için)
+├── 📄 readMe.md
+├── 📄 serviceAccountKey.json     ← Firestore private key (Yunustan istenmeli)
+└── 📄 .gitignore                 ← venv klasörü gibi büyük sanal dosyaların veya json keyin github a gitmemesi için
 ```
 
 ---
