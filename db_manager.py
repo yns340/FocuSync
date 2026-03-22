@@ -11,11 +11,37 @@ class DatabaseManager:
         
         self.db = firestore.client()
 
+    # ==========================================
+    # KULLANICI PROFİLİ FONKSİYONLARI (WRITE & READ & UPDATE)
+    # ==========================================
+
     def _is_valid_email(self, email):
         """E-posta formatının geçerli olup olmadığını RegEx ile kontrol eder."""
         # Standart e-posta formatı için Düzenli İfade (Regex)
         regex_pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
         return re.match(regex_pattern, email) is not None
+
+    def login_user(self, email, password):
+        """Veritabanında email ve şifre eşleşmesini kontrol eder."""
+
+        # 0. ADIM: Boşluk Kontrolü
+        if not email.strip() or not password.strip():
+            return False, "Hata: E-posta ve şifre alanları boş bırakılamaz!"
+
+        # 1. ADIM: E-posta formatı geçerli mi?
+        if not self._is_valid_email(email):
+            return False, "Hata: Geçersiz e-posta formatı!"
+
+        try:
+            users_ref = self.db.collection("Users")
+            query = users_ref.where("email", "==", email).where("password", "==", password).stream()
+            
+            for user in query:
+                return True, user.id # Eşleşme bulundu, user_id dönüyor
+            
+            return False, "E-posta veya şifre hatalı."
+        except Exception as e:
+            return False, f"Sorgu hatası: {str(e)}"
 
     def register_user(self, email, password):
         """Yeni bir kullanıcıyı 'Users' koleksiyonuna ekler. Aynı e-posta varsa engeller."""
@@ -41,33 +67,48 @@ class DatabaseManager:
             doc_ref.set({
                 "email": email,
                 "password": password,
-                "role": "User"
+                "role": "User",
+                "name": "",        # varsayılan boş
+                "surname": "",     # varsayılan boş
+                "school": ""       # varsayılan boş
             })
             return True, "Kullanıcı başarıyla kaydedildi."
         except Exception as e:
             return False, f"Kayıt hatası: {str(e)}"
 
-    def login_user(self, email, password):
-        """Veritabanında email ve şifre eşleşmesini kontrol eder."""
-
-        # 0. ADIM: Boşluk Kontrolü
-        if not email.strip() or not password.strip():
-            return False, "Hata: E-posta ve şifre alanları boş bırakılamaz!"
-
-        # 1. ADIM: E-posta formatı geçerli mi?
-        if not self._is_valid_email(email):
-            return False, "Hata: Geçersiz e-posta formatı!"
-
+    def get_user_profile(self, user_id):
+        """Belirtilen user_id'ye ait tüm kullanıcı bilgilerini Firestore'dan okur."""
         try:
-            users_ref = self.db.collection("Users")
-            query = users_ref.where("email", "==", email).where("password", "==", password).stream()
+            doc_ref = self.db.collection("Users").document(user_id)
+            doc = doc_ref.get()
             
-            for user in query:
-                return True, user.id # Eşleşme bulundu, user_id dönüyor
-            
-            return False, "E-posta veya şifre hatalı."
+            if doc.exists:
+                return True, doc.to_dict() # Verileri sözlük (dict) olarak döndür
+            else:
+                return False, "Kullanıcı bulunamadı."
         except Exception as e:
-            return False, f"Sorgu hatası: {str(e)}"
+            return False, f"Profil okuma hatası: {str(e)}"
+
+    def update_user_profile(self, user_id, name, surname, school, new_password=None):
+        """Kullanıcının profil bilgilerini ve (eğer girilmişse) şifresini günceller."""
+        try:
+            doc_ref = self.db.collection("Users").document(user_id)
+            
+            # Güncellenecek temel veriler
+            update_data = {
+                "name": name,
+                "surname": surname,
+                "school": school
+            }
+            
+            # Eğer şifre de değiştirilmek istenmişse onu da sözlüğe ekle
+            if new_password:
+                update_data["password"] = new_password
+                
+            doc_ref.update(update_data) # Sadece bu alanları değiştirir, e-postaya dokunmaz
+            return True, "Profil ayarları başarıyla kaydedildi."
+        except Exception as e:
+            return False, f"Profil güncelleme hatası: {str(e)}"
 
     # ==========================================
     # PROJE MİMARİSİ FONKSİYONLARI (FocuSync)

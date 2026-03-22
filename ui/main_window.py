@@ -81,6 +81,15 @@ class MainWindow(QMainWindow):
 
         sb.addStretch()
 
+        profile_btn = QPushButton("  👤  Profil")
+        profile_btn.setObjectName("nav_button")
+        profile_btn.setFixedHeight(42)
+        profile_btn.setFont(QFont("Segoe UI",12))
+        profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        profile_btn.clicked.connect(lambda _, k="profile": self._navigate(k))
+        self._nav_buttons["profile"] = profile_btn
+        sb.addWidget(profile_btn)
+
         logout_btn = QPushButton("  🚪  Çıkış Yap")
         logout_btn.setObjectName("nav_button")
         logout_btn.setFixedHeight(42)
@@ -99,6 +108,7 @@ class MainWindow(QMainWindow):
         from ui.whitelist_page  import WhitelistPage
         from ui.statistics_page import StatisticsPage
         from ui.suggestions_page import SuggestionsPage
+        from ui.profile_page     import ProfilePage
 
         self.dashboard_page  = DashboardPage(self.user_id, self.db_manager)
         self.schedule_page   = SchedulePage(self.user_id, self.db_manager)
@@ -106,6 +116,7 @@ class MainWindow(QMainWindow):
         self.whitelist_page  = WhitelistPage(self.user_id, self.db_manager)
         self.statistics_page = StatisticsPage(self.user_id, self.db_manager)
         self.suggestions_page= SuggestionsPage(self.user_id, self.db_manager)
+        self.profile_page     = ProfilePage(self.user_id, self.db_manager) 
 
         self._page_map = {
             "dashboard":  (0, self.dashboard_page),
@@ -114,6 +125,7 @@ class MainWindow(QMainWindow):
             "whitelist":  (3, self.whitelist_page),
             "statistics": (4, self.statistics_page),
             "suggestions":(5, self.suggestions_page),
+            "profile":     (6, self.profile_page), # <-- YENİ EKLENEN SATIR
         }
         
         for _, page in self._page_map.values():
