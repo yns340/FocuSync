@@ -252,6 +252,7 @@ Firestore
 | Alan            | Tip    | Açıklama        |
 | --------------- | ------ | --------------- |
 | **`course_id`** | string | Ders referansı  |
+| `course_name`   | string | Ders adı.       |
 | `start_time`    | string | Başlangıç saati |
 | `end_time`      | string | Bitiş saati     |
 | `type`          | string | Etkinlik türü   |
@@ -265,6 +266,7 @@ Firestore
     "Pazartesi": [
       {
         "course_id": "string",
+        "course_name": "string",
         "start_time": "string",
         "end_time": "string",
         "type": "string"
@@ -273,6 +275,7 @@ Firestore
     "Salı": [
       {
         "course_id": "string",
+        "course_name": "string",
         "start_time": "string",
         "end_time": "string",
         "type": "string"
@@ -281,6 +284,7 @@ Firestore
     "Çarşamba": [
       {
         "course_id": "string",
+        "course_name": "string",
         "start_time": "string",
         "end_time": "string",
         "type": "string"
@@ -289,6 +293,7 @@ Firestore
     "Perşembe": [
       {
         "course_id": "string",
+        "course_name": "string",
         "start_time": "string",
         "end_time": "string",
         "type": "string"
@@ -297,6 +302,7 @@ Firestore
     "Cuma": [
       {
         "course_id": "string",
+        "course_name": "string",
         "start_time": "string",
         "end_time": "string",
         "type": "string"
@@ -324,6 +330,7 @@ Firestore
 | ------------------ | ------- | ------------------------------ |
 | **`session_id`**   | string  | Oturum ID (örn: `session1`, …) |
 | **`course_id`**    | string  | Ders referansı                 |
+| `course_name`      | string  | Ders adı.                      |
 | `planned_duration` | number  | Planlanan süre (dakika)        |
 | `is_completed`     | boolean | Tamamlandı mı?                 |
 
@@ -336,6 +343,7 @@ Firestore
       {
         "session_id": "string", //Firebase dizide id üretmez o yüzden kendimiz session1 olarak başlatırız...
         "course_id": "string",
+        "course_name": "string",
         "planned_duration": "number",
         "is_completed": "boolean"
       }
@@ -344,6 +352,7 @@ Firestore
       {
         "session_id": "string",
         "course_id": "string",
+        "course_name": "string",
         "planned_duration": "number",
         "is_completed": "boolean"
       }
@@ -352,6 +361,7 @@ Firestore
       {
         "session_id": "string",
         "course_id": "string",
+        "course_name": "string",
         "planned_duration": "number",
         "is_completed": "boolean"
       }
@@ -360,6 +370,7 @@ Firestore
       {
         "session_id": "string",
         "course_id": "string",
+        "course_name": "string",
         "planned_duration": "number",
         "is_completed": "boolean"
       }
@@ -368,6 +379,7 @@ Firestore
       {
         "session_id": "string",
         "course_id": "string",
+        "course_name": "string",
         "planned_duration": "number",
         "is_completed": "boolean"
       }
@@ -376,6 +388,7 @@ Firestore
       {
         "session_id": "string",
         "course_id": "string",
+        "course_name": "string",
         "planned_duration": "number",
         "is_completed": "boolean"
       }
@@ -384,6 +397,7 @@ Firestore
       {
         "session_id": "string",
         "course_id": "string",
+        "course_name": "string",
         "planned_duration": "number",
         "is_completed": "boolean"
       }

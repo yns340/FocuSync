@@ -1,87 +1,12 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QDialog, QLineEdit, QComboBox, QTimeEdit, 
-    QDoubleSpinBox, QMessageBox, QFrame, QTabWidget, QDateEdit
+    QTableWidget, QTableWidgetItem, QFileDialog, QHeaderView,
+    QMessageBox, QComboBox, QTimeEdit, QAbstractItemView, QListView
 )
-from PyQt6.QtCore import Qt, QTime, QDate
+from PyQt6.QtCore import Qt, QTime
 from PyQt6.QtGui import QFont
 
-DAYS = ["Pazartesi","Salı","Çarşamba","Perşembe","Cuma","Cumartesi","Pazar"]
-
-class AddScheduleDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Programa Ders Ekle")
-        self.setFixedSize(420, 360)
-        self._build()
-
-    def _build(self):
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(24,24,24,24)
-        lay.setSpacing(10)
-
-        t = QLabel("Haftalık Programa Ekle")
-        t.setFont(QFont("Segoe UI",14,QFont.Weight.Bold))
-        lay.addWidget(t)
-
-        self.name_input = QLineEdit(); self.name_input.setPlaceholderText("Veri Yapıları")
-        lay.addWidget(QLabel("Ders Adı")); lay.addWidget(self.name_input)
-
-        self.day_combo = QComboBox(); self.day_combo.addItems(DAYS)
-        lay.addWidget(QLabel("Gün")); lay.addWidget(self.day_combo)
-
-        self.start_time = QTimeEdit(QTime(8,30)); self.start_time.setDisplayFormat("HH:mm")
-        self.end_time = QTimeEdit(QTime(10,0)); self.end_time.setDisplayFormat("HH:mm")
-        lay.addWidget(QLabel("Başlangıç")); lay.addWidget(self.start_time)
-        lay.addWidget(QLabel("Bitiş")); lay.addWidget(self.end_time)
-
-        lay.addStretch()
-        btn_row = QHBoxLayout()
-        c = QPushButton("İptal"); c.clicked.connect(self.reject)
-        a = QPushButton("Ekle"); a.setObjectName("primary_btn"); a.clicked.connect(self.accept)
-        btn_row.addWidget(c); btn_row.addWidget(a); lay.addLayout(btn_row)
-
-    def get_values(self):
-        return {
-            "name": self.name_input.text().strip(),
-            "day": self.day_combo.currentText(),
-            "start": self.start_time.time().toString("HH:mm"),
-            "end": self.end_time.time().toString("HH:mm"),
-        }
-
-class AddCourseProfileDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Ders Profili Ekle")
-        self.setFixedSize(380, 280)
-        self._build()
-
-    def _build(self):
-        lay = QVBoxLayout(self); lay.setContentsMargins(24,24,24,24)
-        lay.addWidget(QLabel("Ders Profili / Sınav Tarihi"))
-
-        self.name_input = QLineEdit()
-        lay.addWidget(QLabel("Ders Adı")); lay.addWidget(self.name_input)
-
-        self.diff_spin = QDoubleSpinBox(); self.diff_spin.setRange(1.0,5.0)
-        lay.addWidget(QLabel("Zorluk Seviyesi (1.0–5.0)")); lay.addWidget(self.diff_spin)
-
-        self.exam_date = QDateEdit(QDate.currentDate().addDays(30))
-        self.exam_date.setDisplayFormat("yyyy-MM-dd")
-        lay.addWidget(QLabel("Sınav Tarihi")); lay.addWidget(self.exam_date)
-
-        lay.addStretch()
-        btn_row = QHBoxLayout()
-        c = QPushButton("İptal"); c.clicked.connect(self.reject)
-        a = QPushButton("Ekle"); a.setObjectName("primary_btn"); a.clicked.connect(self.accept)
-        btn_row.addWidget(c); btn_row.addWidget(a); lay.addLayout(btn_row)
-
-    def get_values(self):
-        return {
-            "name": self.name_input.text().strip(),
-            "difficulty": self.diff_spin.value(),
-            "exam_date": self.exam_date.date().toString("yyyy-MM-dd"),
-        }
+from ocr_manager import OCRManager
 
 class SchedulePage(QWidget):
     def __init__(self, user_id, db_manager, parent=None):
@@ -92,41 +17,255 @@ class SchedulePage(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(28,24,28,24)
+        root.setContentsMargins(28, 24, 28, 24)
+        root.setSpacing(20)
 
+        # ── Başlık ──
         hdr = QHBoxLayout()
-        title = QLabel("Ders Programı")
-        title.setFont(QFont("Segoe UI",18,QFont.Weight.Bold))
-        hdr.addWidget(title); hdr.addStretch()
-
-        add_sched_btn = QPushButton("+ Programa Ekle")
-        add_sched_btn.clicked.connect(self._add_schedule_dialog)
-        
-        add_course_btn = QPushButton("+ Ders Profili")
-        add_course_btn.clicked.connect(self._add_course_dialog)
-
-        hdr.addWidget(add_sched_btn); hdr.addWidget(add_course_btn)
+        title = QLabel("Sabit Ders Programı")
+        title.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+        title.setStyleSheet("color:#e4e6ed;")
+        hdr.addWidget(title)
+        hdr.addStretch()
         root.addLayout(hdr)
 
-        # db_manager'da okuma özelliği olmadığı için tablolar boş tutulur
-        info = QLabel("Veritabanından veri çekme fonksiyonları (get_schedules vb.) henüz db_manager.py içerisinde tanımlı olmadığı için listeleme kapalıdır. Ancak ekleme işlemleri başarıyla Firebase'e yazılacaktır.")
-        info.setWordWrap(True)
-        info.setStyleSheet("color:#ff6b35; font-size:12px; padding:20px;")
-        root.addWidget(info)
+        # ── Yükleme Alanı (Büyük Kare Buton) ──
+        self.upload_btn = QPushButton("\n📄\n\nPDF veya Görsel Yükle\n(Sürükle bırak veya seçmek için tıkla)\n")
+        self.upload_btn.setFont(QFont("Segoe UI", 12))
+        self.upload_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.upload_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1a1d26;
+                color: #6b7280;
+                border: 2px dashed #2e3248;
+                border-radius: 12px;
+                padding: 40px;
+            }
+            QPushButton:hover {
+                background-color: #1e2130;
+                border: 2px dashed #00e5a0;
+                color: #e4e6ed;
+            }
+        """)
+        self.upload_btn.clicked.connect(self._import_file)
+        root.addWidget(self.upload_btn)
+
+        # ── Düzenleme Alanı ──
+        self.editor_container = QWidget()
+        editor_layout = QVBoxLayout(self.editor_container)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(15)
+
+        # Araç Çubuğu
+        tools_row = QHBoxLayout()
+        ocr_title = QLabel("🔍 OCR Önizlemesi (Hataları üzerlerine tıklayarak düzeltebilirsiniz)")
+        ocr_title.setStyleSheet("color:#00e5a0; font-weight:bold; font-size:14px;")
+        tools_row.addWidget(ocr_title)
+        tools_row.addStretch()
+
+        add_row_btn = QPushButton("+ Satır Ekle")
+        add_row_btn.setStyleSheet("background:#2e3248; color:#e4e6ed; border-radius:6px; padding:8px 16px; font-size: 14px; font-weight: bold;")
+        add_row_btn.clicked.connect(lambda: self._add_table_row()) 
+        
+        del_row_btn = QPushButton("- Seçili Satırı Sil")
+        del_row_btn.setStyleSheet("background:#ff6b35; color:#e4e6ed; border-radius:6px; padding:8px 16px; font-size: 14px; font-weight: bold;")
+        del_row_btn.clicked.connect(self._delete_selected_row)
+
+        tools_row.addWidget(add_row_btn)
+        tools_row.addWidget(del_row_btn)
+        editor_layout.addLayout(tools_row)
+
+        # ── TABLO TASARIMI VE AYARLARI ──
+        self.table = QTableWidget(0, 5) 
+        self.table.setHorizontalHeaderLabels(["Gün", "Başlangıç", "Bitiş", "Ders Adı", "Tip"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        self.table.verticalHeader().setDefaultSectionSize(60)
+        self.table.verticalHeader().setVisible(False) 
+
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        
+        self.table.setStyleSheet("""
+            QTableWidget {
+                background-color: #111318;
+                color: #e4e6ed;
+                gridline-color: #1e2130;
+                border: 1px solid #1e2130;
+                border-radius: 8px;
+                font-size: 18px; 
+            }
+            QHeaderView::section {
+                background-color: #1a1d26;
+                color: #6b7280;
+                padding: 10px; 
+                border: 1px solid #1e2130;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QTableWidget::item:selected {
+                background-color: rgba(0, 229, 160, 0.15);
+                border-top: 1px solid #00e5a0;
+                border-bottom: 1px solid #00e5a0;
+                color: #e4e6ed;
+            }
+            QComboBox, QTimeEdit {
+                background-color: #1a1d26;
+                color: #e4e6ed;
+                border: 1px solid #2e3248;
+                border-radius: 6px;
+                font-size: 16px; 
+                padding: 4px 10px;
+                margin: 4px; 
+            }
+            QComboBox::drop-down, QTimeEdit::up-button, QTimeEdit::down-button {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #1a1d26;
+                color: #e4e6ed;
+                border: 1px solid #00e5a0;
+                border-radius: 6px;
+                selection-background-color: #00e5a0;
+                selection-color: #111318;
+                outline: none;
+            }
+            QComboBox QAbstractItemView::item {
+                min-height: 35px;
+                padding-left: 10px;
+            }
+            QTableWidget QLineEdit {
+                font-size: 18px;
+                color: #e4e6ed;
+                background-color: #1a1d26;
+            }
+        """)
+        editor_layout.addWidget(self.table, 1)
+
+        # Kaydet Butonu
+        self.save_btn = QPushButton("Veritabanına Kaydet")
+        self.save_btn.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold)) 
+        self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #00e5a0;
+                color: #111318;
+                border-radius: 8px;
+                padding: 16px;
+            }
+            QPushButton:hover {
+                background-color: #00c88c;
+            }
+        """)
+        self.save_btn.clicked.connect(self._save_to_db)
+        editor_layout.addWidget(self.save_btn)
+
+        root.addWidget(self.editor_container, 1)
+        self.editor_container.setVisible(False)
+        
         root.addStretch()
 
-    def _add_schedule_dialog(self):
-        dlg = AddScheduleDialog(self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            v = dlg.get_values()
-            if not v["name"]: return
-            success, msg = self.db_manager.add_base_schedule(self.user_id, v["day"], v["name"], v["start"], v["end"])
-            QMessageBox.information(self, "Sonuç", msg)
+    def _add_table_row(self, day="Pazartesi", start="09:00", end="10:00", course="", ctype="Teorik"):
+        row_idx = self.table.rowCount()
+        self.table.insertRow(row_idx)
 
-    def _add_course_dialog(self):
-        dlg = AddCourseProfileDialog(self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            v = dlg.get_values()
-            if not v["name"]: return
-            success, msg = self.db_manager.add_course(self.user_id, v["name"], v["difficulty"], v["exam_date"])
-            QMessageBox.information(self, "Sonuç", msg)
+        # 1. GÜN
+        day_cb = QComboBox()
+        day_cb.setView(QListView())
+        day_cb.addItems(["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"])
+        day_cb.setCurrentText(day)
+        self.table.setCellWidget(row_idx, 0, day_cb)
+
+        # 2. BAŞLANGIÇ SAATİ
+        start_te = QTimeEdit(QTime.fromString(start, "HH:mm"))
+        start_te.setDisplayFormat("HH:mm")
+        self.table.setCellWidget(row_idx, 1, start_te)
+
+        # 3. BİTİŞ SAATİ
+        end_te = QTimeEdit(QTime.fromString(end, "HH:mm"))
+        end_te.setDisplayFormat("HH:mm")
+        self.table.setCellWidget(row_idx, 2, end_te)
+
+        # 4. DERS ADI
+        course_item = QTableWidgetItem(course)
+        course_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.table.setItem(row_idx, 3, course_item)
+
+        # 5. TİP
+        type_cb = QComboBox()
+        type_cb.setView(QListView())
+        type_cb.addItems(["Teorik", "Uygulamalı"])
+        type_cb.setCurrentText(ctype)
+        self.table.setCellWidget(row_idx, 4, type_cb)
+
+    def _import_file(self):
+        """Kullanıcının seçtiği PDF'i gerçek OCR'a gönderir ve tabloyu doldurur."""
+        file_path, _ = QFileDialog.getOpenFileName(self, "Ders Programı Seç", "", "PDF Dosyaları (*.pdf)")
+        
+        if file_path:
+            # İşlem başladığında butonu bekleme moduna alıyoruz
+            self.upload_btn.setText("\n⏳\n\nPDF Okunuyor, Lütfen Bekleyin...\n")
+            self.upload_btn.repaint()
+            
+            # Gerçek OCR İşlemi
+            ocr = OCRManager()
+            success, result_data = ocr.parse_pdf(file_path)
+
+            if not success:
+                QMessageBox.warning(self, "Hata", result_data)
+                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Sürükle bırak veya seçmek için tıkla)\n")
+                return
+
+            # Tabloyu temizle ve yeni verileri yerleştir
+            self.table.setRowCount(0)
+            added_count = 0
+            
+            for day, courses in result_data.items():
+                for item in courses:
+                    self._add_table_row(
+                        day=day, 
+                        start=item["start"], 
+                        end=item["end"], 
+                        course=item["course"], 
+                        ctype=item["ctype"]
+                    )
+                    added_count += 1
+
+            if added_count == 0:
+                QMessageBox.information(self, "Uyarı", "PDF başarıyla okundu ancak uygun formatta ders bulunamadı.")
+                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Sürükle bırak veya seçmek için tıkla)\n")
+            else:
+                self.editor_container.setVisible(True)
+                self.upload_btn.setText(f"\n✅\n\nBaşarıyla {added_count} Ders Okundu\n(Yeni yüklemek için tıkla)\n")
+                self.upload_btn.setStyleSheet("""
+                    QPushButton { background-color: rgba(0, 229, 160, 0.1); color: #00e5a0; border: 2px solid #00e5a0; border-radius: 12px; padding: 15px; }
+                """)
+
+    def _delete_selected_row(self):
+        current_row = self.table.currentRow()
+        if current_row >= 0:
+            self.table.removeRow(current_row)
+
+    def _save_to_db(self):
+        schedule_dict = { "Pazartesi": [], "Salı": [], "Çarşamba": [], "Perşembe": [], "Cuma": [], "Cumartesi": [], "Pazar": [] }
+
+        for row in range(self.table.rowCount()):
+            day = self.table.cellWidget(row, 0).currentText()
+            start = self.table.cellWidget(row, 1).time().toString("HH:mm")
+            end = self.table.cellWidget(row, 2).time().toString("HH:mm")
+            
+            course_item = self.table.item(row, 3)
+            course = course_item.text().strip() if course_item and course_item.text().strip() else None
+            
+            ctype = self.table.cellWidget(row, 4).currentText()
+
+            if not course: continue 
+            
+            schedule_dict[day].append({
+                "course_id": course, 
+                "start_time": start,
+                "end_time": end,
+                "type": "School_Class",
+                "class_type": ctype
+            })
+        
+        QMessageBox.information(self, "Başarılı", "Ders programınız şimdilik sadece arayüzde onaylandı! (Henüz veritabanına yazılmadı)")

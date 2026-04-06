@@ -148,13 +148,13 @@ class DatabaseManager:
     # PROJE MİMARİSİ FONKSİYONLARI (FocuSync SPMP)
     # ==========================================
 
-    def add_course(self, user_id, course_name, difficulty_level, weekly_hours, exam_date=None):
+    def add_course(self, user_id, course_id, course_name, difficulty_level, weekly_hours, exam_date=None):
         """
         Courses (Ana Tablo): Yeni bir ders oluşturur.
-        Döndürdüğü 'course_id' değeri Schedules ve StudyPlans içerisinde kullanılmalıdır!
+        DİKKAT: Firebase'in rastgele ID'si YERİNE, parametre olarak gelen course_id doküman ID'si olarak kullanılır.
         """
         try:
-            doc_ref = self.db.collection("Courses").document()
+            doc_ref = self.db.collection("Courses").document(course_id)
             doc_ref.set({
                 "user_id": user_id,
                 "course_name": course_name,
@@ -169,7 +169,7 @@ class DatabaseManager:
     def save_schedule(self, user_id, schedule_name, weekly_routine):
         """
         Schedules: OCR ile okunan 7 günlük programı tek bir sözlük (dict) olarak kaydeder.
-        weekly_routine formatı: {"Pazartesi": [{"course_id": "...", "start_time": "09:30"...}], "Salı": [] ...}
+        weekly_routine formatı: {"Pazartesi": [{"course_id": "ceng318", "course_name": "Mikroişlemciler", "start_time": "09:30", "end_time": "10:20", "type": "School_Class"}...]}
         """
         try:
             self.db.collection("Schedules").add({
@@ -185,7 +185,7 @@ class DatabaseManager:
     def save_study_plan(self, user_id, plan_start_date, weekly_sessions):
         """
         StudyPlans: Zeynep'in algoritmasının ürettiği 7 günlük çalışma planını kaydeder.
-        weekly_sessions formatı: {"Pazartesi": [{"session_id": "...", "course_id": "...", "planned_duration": 45, "is_completed": False}]}
+        weekly_sessions formatı: {"Pazartesi": [{"session_id": "session1", "course_id": "ceng318", "course_name": "Mikroişlemciler", "planned_duration": 45, "is_completed": False}]}
         """
         try:
             self.db.collection("StudyPlans").add({
