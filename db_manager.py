@@ -166,21 +166,61 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Ders ekleme hatası: {str(e)}"
 
-    def save_schedule(self, user_id, schedule_name, weekly_routine):
+    def save_full_schedule(self, user_id, schedule_name, weekly_routine, course_hours_dict):
         """
-        Schedules: OCR ile okunan 7 günlük programı tek bir sözlük (dict) olarak kaydeder.
-        weekly_routine formatı: {"Pazartesi": [{"course_id": "ceng318", "course_name": "Mikroişlemciler", "start_time": "09:30", "end_time": "10:20", "type": "School_Class"}...]}
+        Eski programı siler, dersleri (Courses) akıllıca günceller/ekler (is_active mantığı ile) 
+        ve yeni programı (Schedules) kaydeder.
         """
         try:
+            # 1. Eski programı temizle
+            self.delete_schedule(user_id)
+
+            # 2. Kullanıcının MEVCUT tüm derslerini bul (Hangilerini False yapacağımızı bilmek için)
+            existing_courses_ref = self.db.collection("Courses").where("user_id", "==", user_id).stream()
+            existing_course_ids = [doc.id for doc in existing_courses_ref]
+
+            # 3. Courses tablosunu güncelle (Upsert Mantığı)
+            for c_id, c_info in course_hours_dict.items():
+                doc_ref = self.db.collection("Courses").document(c_id)
+                
+                if c_id in existing_course_ids:
+                    # Ders veritabanında zaten varsa ismini, saatini güncelle ve AKTİF yap
+                    doc_ref.update({
+                        "course_name": c_info["name"],
+                        "weekly_hours": c_info["hours"],
+                        "is_active": True
+                    })
+                    # İşlenen dersi listeden çıkar ki geriye sadece "pasife çekilmesi gerekenler" kalsın
+                    existing_course_ids.remove(c_id)
+                else:
+                    # Ders ilk defa ekleniyorsa sıfırdan oluştur ve AKTİF yap
+                    doc_ref.set({
+                        "user_id": user_id,
+                        "course_name": c_info["name"],
+                        "difficulty_level": 3.0, 
+                        "weekly_hours": c_info["hours"],
+                        "exam_date": None,
+                        "is_active": True
+                    })
+
+            # 4. Programda OLMAYAN eski dersleri PASİFE ÇEK (Soft Delete)
+            # existing_course_ids listesinde kalanlar, yeni programda olmayan eski derslerdir.
+            for old_c_id in existing_course_ids:
+                self.db.collection("Courses").document(old_c_id).update({
+                    "is_active": False
+                })
+
+            # 5. Yeni haftalık programı kaydet
             self.db.collection("Schedules").add({
                 "user_id": user_id,
                 "schedule_name": schedule_name,
                 "updated_at": firestore.SERVER_TIMESTAMP,
                 "weekly_routine": weekly_routine
             })
-            return True, "Haftalık program başarıyla kaydedildi."
+            return True, "Ders programı başarıyla kaydedildi, eski dersler arşive alındı."
         except Exception as e:
-            return False, f"Program ekleme hatası: {str(e)}"
+            return False, f"Program kaydetme hatası: {str(e)}"
+
 
     def save_study_plan(self, user_id, plan_start_date, weekly_sessions):
         """
@@ -197,7 +237,7 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Plan oluşturma hatası: {str(e)}"
 
-    def add_focus_session(self, user_id, study_plan_session_id, course_id, actual_focus_time, focus_score, status):
+    def add_focus_session(self, user_id, study_plan_session_id, course_id, actual_focus_time,head_tilt_degree, focus_score, status):
         """
         FocusSessions: Akif'in kamera sisteminden gelen GERÇEKLEŞEN odaklanma raporunu kaydeder.
         """
@@ -207,6 +247,7 @@ class DatabaseManager:
                 "study_plan_session_id": study_plan_session_id, 
                 "course_id": course_id,
                 "actual_focus_time": int(actual_focus_time),
+                "head_tilt_degree": float(head_tilt_degree),
                 "focus_score": float(focus_score),
                 "status": status,
                 "timestamp": firestore.SERVER_TIMESTAMP
@@ -290,6 +331,20 @@ class DatabaseManager:
             return True, "Silinecek eski bir program bulunamadı (Temiz)."
         except Exception as e:
             return False, f"Program silme hatası: {str(e)}"
+    
+    def delete_course(self, user_id, course_id):
+        """Kullanıcının seçtiği tekil bir dersi veritabanından kalıcı olarak siler."""
+        try:
+            doc_ref = self.db.collection("Courses").document(course_id)
+            doc = doc_ref.get()
+            
+            # Sadece ders varsa ve bu kullanıcıya aitse silmesine izin ver (Güvenlik)
+            if doc.exists and doc.to_dict().get("user_id") == user_id:
+                doc_ref.delete()
+                return True, "Ders başarıyla silindi."
+            return False, "Ders bulunamadı veya silme yetkiniz yok."
+        except Exception as e:
+            return False, f"Ders silme hatası: {str(e)}"
 
     # ==========================================
     # UPDATE (GÜNCELLEME) FONKSİYONLARI - ALGORİTMA İÇİN

@@ -218,21 +218,23 @@ Firestore
 
 ### 📚 Courses
 
-| Alan               | Tip       | Açıklama            |
-| ------------------ | --------- | ------------------- |
-| `course_name`      | string    | Ders adı            |
-| `difficulty_level` | number    | Zorluk seviyesi     |
-| `exam_date`        | timestamp | Sınav tarihi        |
-| **`user_id`**      | string    | Kullanıcı referansı |
-| `weekly_hours`     | number    | Haftalık ders saati |
+| Alan               | Tip       | Açıklama                                     |
+| ------------------ | --------- | -------------------------------------------- |
+| `course_name`      | string    | Ders adı                                     |
+| `difficulty_level` | number    | Zorluk seviyesi                              |
+| `exam_date`        | timestamp | Sınav tarihi                                 |
+| **`user_id`**      | string    | Kullanıcı referansı                          |
+| `weekly_hours`     | number    | Haftalık ders saati                          |
+| `is_active`        | boolean   | Güncel Programda veya ek var mı geçmişte mi? |
 
 ```json
 {
   "course_name": "string",
-  "difficulty_level": "string",
+  "difficulty_level": "number",
   "exam_date": "timestamp",
-  "user_id": "string"
-  "weekly_hours": "number",     // Örn: 4 (Okuldaki ders sıklığı/kredisi)
+  "user_id": "string",
+  "weekly_hours": "number", // Örn: 4 (Okuldaki ders sıklığı/kredisi)
+  "is_active": "boolean"
 }
 ```
 
@@ -410,21 +412,23 @@ Firestore
 
 ### 🎯 FocusSessions
 
-| Alan                        | Tip       | Açıklama                         |
-| --------------------------- | --------- | -------------------------------- |
-| **`study_plan_session_id`** | string    | StudyPlan `session_id` referansı |
-| **`course_id`**             | string    | Ders referansı                   |
-| `actual_focus_time`         | number    | Gerçek odak süresi (dakika)      |
-| `focus_score`               | number    | Odak skoru                       |
-| `status`                    | string    | Durum                            |
-| `timestamp`                 | timestamp | Oturum zamanı                    |
-| **`user_id`**               | string    | Kullanıcı referansı              |
+| Alan                        | Tip       | Açıklama                           |
+| --------------------------- | --------- | ---------------------------------- |
+| **`study_plan_session_id`** | string    | StudyPlan `session_id` referansı   |
+| **`course_id`**             | string    | Ders referansı                     |
+| `actual_focus_time`         | number    | Gerçek odak süresi (dakika)        |
+| `head_tilt_degree `         | number    | Kafa eğimi için tutulan açı değeri |
+| `focus_score`               | number    | Odak skoru                         |
+| `status`                    | string    | Durum                              |
+| `timestamp`                 | timestamp | Oturum zamanı                      |
+| **`user_id`**               | string    | Kullanıcı referansı                |
 
 ```json
 {
   "study_plan_session_id": "string", (weekly_sessions id lerine atanmalı)
   "course_id": "string",
   "actual_focus_time": "number",
+  "head_tilt_degree": "number",
   "focus_score": "number",
   "status": "string",
   "timestamp": "timestamp",
