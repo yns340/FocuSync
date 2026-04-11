@@ -64,7 +64,11 @@ class SchedulePage(QWidget):
         self.user_id = user_id
         self.db_manager = db_manager
         self._build_ui()
-        self._load_current_schedule() # Sayfa açıldığında DB'den programı çekmeye çalış
+
+    def showEvent(self, event):
+        """Bu sayfa ekranda her görünür olduğunda (sekmeye tıklandığında) tetiklenir."""
+        super().showEvent(event)
+        self._load_current_schedule()
 
     def _check_internet(self):
         """Kullanıcının internet bağlantısı olup olmadığını Google DNS'e ping atarak kontrol eder."""
@@ -98,6 +102,7 @@ class SchedulePage(QWidget):
         view_layout = QVBoxLayout(self.view_container)
         view_layout.setContentsMargins(0,0,0,0)
         
+        # Görüntüleme ekranı başlığı (Program adı buraya yazılacak)
         self.view_title = QLabel("📌 Mevcut Aktif Programınız")
         self.view_title.setStyleSheet("color: #00e5a0; font-size: 16px; font-weight: bold;")
         view_layout.addWidget(self.view_title)
@@ -112,8 +117,9 @@ class SchedulePage(QWidget):
         """)
         view_layout.addWidget(self.view_table)
 
-        self.btn_recreate = QPushButton("Programı Sıfırla / Yeniden Yükle")
-        self.btn_recreate.setStyleSheet("background-color: #ff6b35; color: #ffffff; border-radius: 8px; padding: 12px; font-weight: bold;")
+        self.btn_recreate = QPushButton("✏️ Programı Düzenle / Yeni PDF Yükle")
+        self.btn_recreate.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_recreate.setStyleSheet("background-color: #3b82f6; color: #ffffff; border-radius: 8px; padding: 12px; font-weight: bold;")
         self.btn_recreate.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
         view_layout.addWidget(self.btn_recreate)
 
@@ -124,11 +130,41 @@ class SchedulePage(QWidget):
         edit_layout = QVBoxLayout(self.edit_container)
         edit_layout.setContentsMargins(0,0,0,0)
 
-        self.upload_btn = QPushButton("\n📄\n\nPDF veya Görsel Yükle\n(Sürükle bırak veya seçmek için tıkla)\n")
+        # GERİ DÖN BUTONU VE PROGRAM ADI GİRİŞİ
+        top_edit_row = QHBoxLayout()
+        
+        self.btn_go_back = QPushButton("⬅️ İptal / Geri Dön")
+        self.btn_go_back.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_go_back.setStyleSheet("""
+            QPushButton { background-color: #2e3248; color: #e4e6ed; border-radius: 6px; padding: 8px 16px; font-weight: bold; }
+            QPushButton:hover { background-color: #3b405a; }
+        """)
+        self.btn_go_back.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(0))
+        top_edit_row.addWidget(self.btn_go_back)
+        
+        top_edit_row.addSpacing(20)
+        
+        name_lbl = QLabel("Program Adı:")
+        name_lbl.setStyleSheet("color: #9ca3af; font-size: 14px; font-weight: bold;")
+        top_edit_row.addWidget(name_lbl)
+        
+        self.schedule_name_input = QLineEdit("(Güncel Sabit Program)")
+        self.schedule_name_input.setPlaceholderText("Örn: 2026 Bahar Dönemi")
+        self.schedule_name_input.setMinimumWidth(250)
+        self.schedule_name_input.setStyleSheet("""
+            QLineEdit { background-color: #1a1d26; color: #00e5a0; border: 1px solid #2e3248; border-radius: 6px; padding: 8px; font-size: 14px; font-weight: bold; }
+            QLineEdit:focus { border: 1px solid #00e5a0; }
+        """)
+        top_edit_row.addWidget(self.schedule_name_input)
+        
+        top_edit_row.addStretch()
+        edit_layout.addLayout(top_edit_row)
+
+        self.upload_btn = QPushButton("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
         self.upload_btn.setFont(QFont("Segoe UI", 12))
         self.upload_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.upload_btn.setStyleSheet("""
-            QPushButton { background-color: #1a1d26; color: #6b7280; border: 2px dashed #2e3248; border-radius: 12px; padding: 40px; }
+            QPushButton { background-color: #1a1d26; color: #6b7280; border: 2px dashed #2e3248; border-radius: 12px; padding: 30px; }
             QPushButton:hover { background-color: #1e2130; border: 2px dashed #00e5a0; color: #e4e6ed; }
         """)
         self.upload_btn.clicked.connect(self._import_file)
@@ -139,7 +175,7 @@ class SchedulePage(QWidget):
         editor_inner_layout.setContentsMargins(0,0,0,0)
 
         tools_row = QHBoxLayout()
-        ocr_title = QLabel("🔍 OCR Önizlemesi (Hataları düzeltebilirsiniz)")
+        ocr_title = QLabel("📝 Manuel Düzenleme Alanı")
         ocr_title.setStyleSheet("color:#00e5a0; font-weight:bold; font-size:14px;")
         tools_row.addWidget(ocr_title)
         tools_row.addStretch()
@@ -148,7 +184,7 @@ class SchedulePage(QWidget):
         add_row_btn.setStyleSheet("background:#2e3248; color:#e4e6ed; border-radius:6px; padding:8px 16px; font-weight: bold;")
         add_row_btn.clicked.connect(lambda: self._add_table_row()) 
         del_row_btn = QPushButton("- Seçili Satırı Sil")
-        del_row_btn.setStyleSheet("background:#ff6b35; color:#e4e6ed; border-radius:6px; padding:8px 16px; font-weight: bold;")
+        del_row_btn.setStyleSheet("background:#ff5c5c; color:#111318; border-radius:6px; padding:8px 16px; font-weight: bold;")
         del_row_btn.clicked.connect(self._delete_selected_row)
         tools_row.addWidget(add_row_btn)
         tools_row.addWidget(del_row_btn)
@@ -200,13 +236,22 @@ class SchedulePage(QWidget):
     def _load_current_schedule(self):
         """Veritabanından mevcut programı çeker ve Görüntüleme Modunda gösterir."""
         if not self._check_internet():
-            self.stacked_widget.setCurrentIndex(1) # İnternet yoksa direkt yükleme sayfasını aç
+            self.stacked_widget.setCurrentIndex(1) 
             return
 
         success, data = self.db_manager.get_schedule(self.user_id)
         if success and isinstance(data, dict):
-            # Program bulundu, tabloyu doldur
             self.view_table.setRowCount(0)
+            self.table.setRowCount(0) 
+            
+            # Görüntüleme ekranı başlığına ve Düzenleme ekranı inputuna DB'den gelen ismi yaz
+            saved_name = data.get("schedule_name", "").strip()
+            if not saved_name:
+                saved_name = "(Güncel Sabit Program)"
+                
+            self.view_title.setText(f"📌 {saved_name}")
+            self.schedule_name_input.setText(saved_name)
+            
             routine = data.get("weekly_routine", {})
             days_order = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
             
@@ -224,10 +269,19 @@ class SchedulePage(QWidget):
                     self.view_table.setItem(r_idx, 2, QTableWidgetItem(course.get("end_time", "")))
                     self.view_table.setItem(r_idx, 3, QTableWidgetItem(display_text))
                     self.view_table.setItem(r_idx, 4, QTableWidgetItem(course.get("class_type", "")))
+
+                    self._add_table_row(
+                        day=day, 
+                        start=course.get("start_time", "00:00"), 
+                        end=course.get("end_time", "00:00"), 
+                        course=display_text, 
+                        ctype=course.get("class_type", "Teorik")
+                    )
             
-            self.stacked_widget.setCurrentIndex(0) # Görüntüleme modunu aç
+            self.editor_wrapper.setVisible(True) 
+            self.stacked_widget.setCurrentIndex(0) 
         else:
-            self.stacked_widget.setCurrentIndex(1) # Program yoksa düzenleme modunu aç
+            self.stacked_widget.setCurrentIndex(1) 
 
     def _sync_course_realtime(self, source_widget, is_code_change):
         group_id = source_widget.group_id
@@ -328,13 +382,17 @@ class SchedulePage(QWidget):
         if not self._check_internet():
             QMessageBox.critical(self, "Bağlantı Hatası", "İnternet bağlantısı kurulamadı!\nLütfen bağlantınızı kontrol edip tekrar deneyin.")
             return
+            
+        schedule_name = self.schedule_name_input.text().strip()
+        if not schedule_name:
+            schedule_name = "(Güncel Sabit Program)"
 
         self.save_btn.setText("Kaydediliyor...")
         self.save_btn.setEnabled(False)
         self.save_btn.repaint()
 
         schedule_dict = { "Pazartesi": [], "Salı": [], "Çarşamba": [], "Perşembe": [], "Cuma": [], "Cumartesi": [], "Pazar": [] }
-        course_hours_dict = {} # {"ceng318": {"name": "Mikro", "hours": 2}}
+        course_hours_dict = {} 
         valid_courses_count = 0
 
         for row in range(self.table.rowCount()):
@@ -355,7 +413,6 @@ class SchedulePage(QWidget):
             
             valid_courses_count += 1
             
-            # DB için temizlenmiş ID (örn: CENG 318 -> ceng318)
             clean_id = course_code.replace(" ", "").lower()
             
             day = self.table.cellWidget(row, 0).currentText()
@@ -363,7 +420,6 @@ class SchedulePage(QWidget):
             end_time = self.table.cellWidget(row, 2).time()
             ctype = self.table.cellWidget(row, 4).currentText()
             
-            # Saat farkını hesapla (Akademik olarak her 50-60 dk = 1 ders saati kabul edilir)
             mins_diff = start_time.secsTo(end_time) // 60
             hours = round(mins_diff / 50) if mins_diff > 0 else 1
 
@@ -387,14 +443,13 @@ class SchedulePage(QWidget):
             self.save_btn.setEnabled(True)
             return
         
-        # ── VERİTABANINA GÖNDER ──
-        success, msg = self.db_manager.save_full_schedule(self.user_id, "Bahar Dönemi", schedule_dict, course_hours_dict)
+        success, msg = self.db_manager.save_full_schedule(self.user_id, schedule_name, schedule_dict, course_hours_dict)
         
         self.save_btn.setText("Veritabanına Kaydet")
         self.save_btn.setEnabled(True)
 
         if success:
             QMessageBox.information(self, "Başarılı", msg)
-            self._load_current_schedule() # Başarılıysa Görüntüleme moduna geç
+            self._load_current_schedule() 
         else:
             QMessageBox.critical(self, "Hata", msg)

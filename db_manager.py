@@ -148,23 +148,44 @@ class DatabaseManager:
     # PROJE MİMARİSİ FONKSİYONLARI (FocuSync SPMP)
     # ==========================================
 
-    def add_course(self, user_id, course_id, course_name, difficulty_level, weekly_hours, exam_date=None):
+    def add_course(self, user_id, course_id, course_name, difficulty_level, weekly_hours, exam_date=None, is_active=True):
         """
-        Courses (Ana Tablo): Yeni bir ders oluşturur.
-        DİKKAT: Firebase'in rastgele ID'si YERİNE, parametre olarak gelen course_id doküman ID'si olarak kullanılır.
+        Courses (Ana Tablo): Yeni bir ders oluşturur veya günceller.
+        AKILLI GÜNCELLEME: Eğer dersin ismi değişirse, 'Schedules' tablosundaki eski isimleri de bulup otomatik düzeltir.
         """
         try:
+            # 1. Courses tablosunu güncelle (merge=True diğer verileri silmez)
             doc_ref = self.db.collection("Courses").document(course_id)
             doc_ref.set({
                 "user_id": user_id,
                 "course_name": course_name,
-                "difficulty_level": float(difficulty_level), 
+                "difficulty_level": float(difficulty_level),
                 "weekly_hours": int(weekly_hours),
-                "exam_date": exam_date
-            })
-            return True, doc_ref.id # Başarılı olursa course_id döner
+                "exam_date": exam_date,
+                "is_active": is_active
+            }, merge=True) 
+
+            # 2. CASCADE UPDATE: Programdaki (Schedules) ismi de güncelle
+            schedules = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
+            for schedule in schedules:
+                sched_data = schedule.to_dict()
+                routine = sched_data.get("weekly_routine", {})
+                updated = False
+
+                for day, courses in routine.items():
+                    for c in courses:
+                        # Eğer id eşleşirse ve isim değişmişse günceller
+                        if c.get("course_id") == course_id and c.get("course_name") != course_name:
+                            c["course_name"] = course_name
+                            updated = True
+
+                # Eğer programda bir şey değiştiyse Firebase'i yenile
+                if updated:
+                    schedule.reference.update({"weekly_routine": routine})
+
+            return True, "Ders başarıyla kaydedildi/güncellendi."
         except Exception as e:
-            return False, f"Ders ekleme hatası: {str(e)}"
+            return False, f"Ders kaydetme hatası: {str(e)}"
 
     def save_full_schedule(self, user_id, schedule_name, weekly_routine, course_hours_dict):
         """
@@ -298,6 +319,20 @@ class DatabaseManager:
             return False, "Kayıtlı bir ders programı bulunamadı."
         except Exception as e:
             return False, f"Program okuma hatası: {str(e)}"
+
+    def get_schedule_course_ids(self, user_id):
+        """Kullanıcının aktif haftalık programındaki benzersiz ders ID'lerini döndürür (Kilit mekanizması için)."""
+        try:
+            schedules = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
+            course_ids = set()
+            for schedule in schedules:
+                routine = schedule.to_dict().get("weekly_routine", {})
+                for day, courses in routine.items():
+                    for c in courses:
+                        course_ids.add(c.get("course_id"))
+            return True, list(course_ids)
+        except Exception as e:
+            return False, []
 
     def get_study_plan(self, user_id):
         """Kullanıcının güncel akıllı çalışma planını getirir."""

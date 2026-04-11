@@ -497,8 +497,61 @@ Firestore
 
 ---
 
+<br>
+
+---
+
+## 🔐 Firebase Veritabanı ve Güvenlik Mimarisi (ÖNEMLİ NOTLAR!)
+
+Projemizdeki Firebase veritabanı erişimi, Masaüstü (Python) ve Mobil (İstemci/Client) taraflarında tamamen farklı mimarilerle çalışmaktadır. Geliştirme sürecinde veritabanı bağlantı hatası almamak ve güvenlik açığı yaratmamak için aşağıdaki kurallara mutlaka dikkat edilmelidir:
+
+### 1. Masaüstü Uygulaması (Python) 🖥️
+
+- **Bağlantı Yöntemi:** `firebase_admin` kütüphanesi ve `serviceAccountKey.json` (Private Key / Admin SDK) kullanılarak bağlanılmaktadır.
+- **Yetki Durumu:** Admin SDK, Firebase'deki en üst düzey (VIP) yetkiye sahiptir. Bu nedenle Firebase Güvenlik Kurallarını (Security Rules) ve tarih kısıtlamalarını **tamamen es geçer**. Test modu bitse dahi masaüstü uygulaması veritabanına sorunsuzca yazıp okumaya devam eder.
+- **Kırmızı Çizgi:** `serviceAccountKey.json` dosyası bizim en gizli anahtarımızdır. Bu dosya **ASLA** GitHub'a açık olarak yüklenmemeli ve **KESİNLİKLE** mobil uygulamanın içine gömülmemelidir!
+
+### 2. Mobil Uygulama (Client / İstemci) 📱
+
+- **Bağlantı Yöntemi:** Mobil uygulama (Android/iOS) Private Key kullanmaz! Sadece standart Firebase Client SDK kütüphaneleri ile veritabanına bağlanır.
+- **Mevcut Durum (Test Modu):** Mobil geliştirmenin hızlıca yapılabilmesi için Firebase Güvenlik Kurallarındaki tarih sınırı **01 Temmuz 2026**'ya kadar uzatılmıştır. Bu tarihe kadar mobil geliştirici, herhangi bir "Giriş Yap (Login)" modülü kodlamadan veritabanından veri okuyup yazabilir.
+
+### ⚠️ 01 Temmuz 2026'dan Sonra Ne Olacak?
+
+Belirtilen tarih dolduğunda Firebase, veritabanının kapılarını İstemcilere (Client) otomatik olarak kapatacaktır.
+
+- Masaüstü uygulamamız (Private Key kullandığı için) çalışmaya devam edecektir.
+- **Mobil uygulamamız ise veritabanından dışlanacak ve "Permission Denied" hatası vererek çökecektir.**
+
+**🛠️ Çözüm (Mobil Geliştiricinin Yapması Gerekenler):**
+Test süresi bitmeden önce (veya uygulama canlıya alınırken) mobil uygulamaya **Firebase Authentication (E-posta/Şifre ile Giriş)** entegre edilmelidir. Ardından Firebase Console üzerinden güvenlik kuralları aşağıdaki gibi güncellenerek "Sadece giriş yapan kullanıcılar veritabanına erişebilir" mantığına geçilmelidir:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null; // Sadece login olanlar erişebilir
+    }
+  }
+}
+```
+
+<br>
+
+## 🚨 TODO: İNTERNET BAĞLANTISI KONTROLÜ (OFFLINE YAKALAMA) 🚨
+
+> **⚠️ GELİŞTİRİCİ NOTU:** Veritabanı mimarimiz doğrudan bulut (Firebase) tabanlı çalıştığı için, uygulamanın internetsiz ortamda çalıştırıldığı senaryolarda kilitlenmeleri ve çökmeleri engellemek adına acilen bir **"Bağlantı Kontrol Modülü"** eklenmelidir!
+
+**Yapılacaklar:**
+
+- Uygulama başlarken (özellikle _Login_ ve _Dashboard_ veri çekme aşamalarında) `socket` bağlantısı ile internet kontrolü yapılacak.
+- Bağlantı yoksa arayüzde kullanıcıya belirgin bir hata mesajı çıkarılacak: _"FocuSync veritabanına bağlanılamıyor, lütfen internet bağlantınızı kontrol edin!"_
+- **İleriki aşama:** Mümkünse verilerin yerel önbellekten (Local Cache) okunabilmesi için bir yapı kurulacak.
+
 <div align="center">
 
 _FocuSync — Odaklan, Geliş, Başar._
 
 </div>
+```
