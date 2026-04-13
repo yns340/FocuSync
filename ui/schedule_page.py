@@ -66,12 +66,10 @@ class SchedulePage(QWidget):
         self._build_ui()
 
     def showEvent(self, event):
-        """Bu sayfa ekranda her görünür olduğunda (sekmeye tıklandığında) tetiklenir."""
         super().showEvent(event)
         self._load_current_schedule()
 
     def _check_internet(self):
-        """Kullanıcının internet bağlantısı olup olmadığını Google DNS'e ping atarak kontrol eder."""
         try:
             socket.create_connection(("8.8.8.8", 53), timeout=3)
             return True
@@ -93,16 +91,14 @@ class SchedulePage(QWidget):
         hdr.addStretch()
         root.addLayout(hdr)
 
-        # İKİ MODLU EKRAN (StackedWidget): 0 = Görüntüleme, 1 = Düzenleme/Yükleme
         self.stacked_widget = QStackedWidget()
         root.addWidget(self.stacked_widget)
 
-        # --- MOD 0: GÖRÜNTÜLEME MODU (DB'den gelen program) ---
+        # --- MOD 0: GÖRÜNTÜLEME MODU ---
         self.view_container = QWidget()
         view_layout = QVBoxLayout(self.view_container)
         view_layout.setContentsMargins(0,0,0,0)
         
-        # Görüntüleme ekranı başlığı (Program adı buraya yazılacak)
         self.view_title = QLabel("📌 Mevcut Aktif Programınız")
         self.view_title.setStyleSheet("color: #00e5a0; font-size: 16px; font-weight: bold;")
         view_layout.addWidget(self.view_title)
@@ -110,18 +106,29 @@ class SchedulePage(QWidget):
         self.view_table = QTableWidget(0, 5)
         self.view_table.setHorizontalHeaderLabels(["Gün", "Başlangıç", "Bitiş", "Ders Bilgisi", "Tip"])
         self.view_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.view_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers) # Sadece okunabilir
+        self.view_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers) 
         self.view_table.setStyleSheet("""
             QTableWidget { background-color: #111318; color: #e4e6ed; border: 1px solid #1e2130; border-radius: 8px; font-size: 16px; }
             QHeaderView::section { background-color: #1a1d26; color: #6b7280; padding: 10px; border: 1px solid #1e2130; font-weight: bold; }
         """)
         view_layout.addWidget(self.view_table)
 
+        # Düzenle Butonu
         self.btn_recreate = QPushButton("✏️ Programı Düzenle / Yeni PDF Yükle")
         self.btn_recreate.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_recreate.setStyleSheet("background-color: #3b82f6; color: #ffffff; border-radius: 8px; padding: 12px; font-weight: bold;")
         self.btn_recreate.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
         view_layout.addWidget(self.btn_recreate)
+
+        # YENİ: SİL BUTONU
+        self.btn_delete_schedule = QPushButton("🗑️ Programı Tamamen Sil")
+        self.btn_delete_schedule.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_delete_schedule.setStyleSheet("""
+            QPushButton { background-color: transparent; color: #ff5c5c; border: 1px solid #ff5c5c; border-radius: 8px; padding: 10px; font-weight: bold; margin-top: 5px; }
+            QPushButton:hover { background-color: rgba(255, 92, 92, 0.1); }
+        """)
+        self.btn_delete_schedule.clicked.connect(self._delete_schedule_action)
+        view_layout.addWidget(self.btn_delete_schedule)
 
         self.stacked_widget.addWidget(self.view_container)
 
@@ -130,7 +137,6 @@ class SchedulePage(QWidget):
         edit_layout = QVBoxLayout(self.edit_container)
         edit_layout.setContentsMargins(0,0,0,0)
 
-        # GERİ DÖN BUTONU VE PROGRAM ADI GİRİŞİ
         top_edit_row = QHBoxLayout()
         
         self.btn_go_back = QPushButton("⬅️ İptal / Geri Dön")
@@ -234,17 +240,17 @@ class SchedulePage(QWidget):
         self.stacked_widget.addWidget(self.edit_container)
 
     def _load_current_schedule(self):
-        """Veritabanından mevcut programı çeker ve Görüntüleme Modunda gösterir."""
         if not self._check_internet():
             self.stacked_widget.setCurrentIndex(1) 
+            self.btn_go_back.setVisible(False) # İnternet yoksa geri dön butonunu gizle
             return
 
         success, data = self.db_manager.get_schedule(self.user_id)
         if success and isinstance(data, dict):
+            self.btn_go_back.setVisible(True) # Veri varsa geri dön butonu görünsün
             self.view_table.setRowCount(0)
             self.table.setRowCount(0) 
             
-            # Görüntüleme ekranı başlığına ve Düzenleme ekranı inputuna DB'den gelen ismi yaz
             saved_name = data.get("schedule_name", "").strip()
             if not saved_name:
                 saved_name = "(Güncel Sabit Program)"
@@ -281,6 +287,7 @@ class SchedulePage(QWidget):
             self.editor_wrapper.setVisible(True) 
             self.stacked_widget.setCurrentIndex(0) 
         else:
+            self.btn_go_back.setVisible(False) # Program yoksa geri dönemesin
             self.stacked_widget.setCurrentIndex(1) 
 
     def _sync_course_realtime(self, source_widget, is_code_change):
@@ -347,11 +354,16 @@ class SchedulePage(QWidget):
             self.upload_btn.repaint()
             
             ocr = OCRManager()
-            success, result_data = ocr.parse_pdf(file_path)
+            success, doc_type, result_data = ocr.parse_pdf(file_path)
 
             if not success:
                 QMessageBox.warning(self, "Hata", result_data)
-                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Sürükle bırak veya seçmek için tıkla)\n")
+                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
+                return
+
+            if doc_type == "exam":
+                QMessageBox.warning(self, "Yanlış Menü", "Yüklediğiniz dosya bir 'Sınav Takvimi'.\nLütfen bu dosyayı soldaki 'Sınav Takvimi' menüsünden yükleyin.")
+                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
                 return
 
             self.table.setRowCount(0)
@@ -366,12 +378,11 @@ class SchedulePage(QWidget):
                     added_count += 1
 
             if added_count == 0:
-                QMessageBox.information(self, "Uyarı", "PDF başarıyla okundu ancak uygun formatta ders bulunamadı.")
-                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Sürükle bırak veya seçmek için tıkla)\n")
+                QMessageBox.information(self, "Uyarı", "PDF okundu ancak uygun formatta ders bulunamadı.")
+                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
             else:
                 self.editor_wrapper.setVisible(True)
                 self.upload_btn.setText(f"\n✅\n\nBaşarıyla {added_count} Ders Okundu\n(Yeni yüklemek için tıkla)\n")
-                self.upload_btn.setStyleSheet("QPushButton { background-color: rgba(0, 229, 160, 0.1); color: #00e5a0; border: 2px solid #00e5a0; border-radius: 12px; padding: 15px; }")
 
     def _delete_selected_row(self):
         current_row = self.table.currentRow()
@@ -453,3 +464,30 @@ class SchedulePage(QWidget):
             self._load_current_schedule() 
         else:
             QMessageBox.critical(self, "Hata", msg)
+
+    # --- YENİ EKLENEN SİLME İŞLEMİ ---
+    def _delete_schedule_action(self):
+        if not self._check_internet():
+            QMessageBox.critical(self, "Bağlantı Hatası", "İnternet bağlantısı yok! Lütfen bağlantınızı kontrol edin.")
+            return
+            
+        reply = QMessageBox.question(
+            self, 'Programı Sil', 
+            "Mevcut ders programını tamamen silmek istediğinize emin misiniz?\n\n(Bu işlem programdaki tüm dersleri 'Arşivlenmiş' olarak işaretleyecektir.)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            success, msg = self.db_manager.delete_schedule(self.user_id)
+            if success:
+                QMessageBox.information(self, "Başarılı", "Program başarıyla silindi ve dersler arşive aktarıldı.")
+                # Tabloları temizle ve Yükleme moduna geç
+                self.view_table.setRowCount(0)
+                self.table.setRowCount(0)
+                self.editor_wrapper.setVisible(False)
+                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Yeni program yüklemek için tıkla)\n")
+                self.stacked_widget.setCurrentIndex(1)
+                self.btn_go_back.setVisible(False) # Artık geri dönebileceği bir program yok
+            else:
+                QMessageBox.critical(self, "Hata", msg)

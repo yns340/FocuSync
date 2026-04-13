@@ -10,10 +10,11 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-# Menü sıralaması ve isimler güncellendi
+# Menü sıralaması ve isimler güncellendi (Notlar Eklendi)
 NAV_ITEMS = [
     ("🏠", "Dashboard",               "dashboard"),
     ("📚", "Sabit Ders Programı",     "schedule"),
+    ("📅", "Notlar",                    "exams"),         # YENİ EKLENDİ
     ("💡", "Önerilen Ders Programı",  "suggested_plan"),
     ("📊", "Dersler",                 "courses"),
     ("🎯", "Odak Modu",               "focus"),
@@ -105,14 +106,16 @@ class MainWindow(QMainWindow):
 
         from ui.dashboard_page       import DashboardPage
         from ui.schedule_page        import SchedulePage
-        from ui.suggested_plan_page  import SuggestedPlanPage # Yeni isim
-        from ui.courses_page         import CoursesPage       # Yeni isim
+        from ui.exams_page           import ExamsPage         # YENİ EKLENDİ
+        from ui.suggested_plan_page  import SuggestedPlanPage 
+        from ui.courses_page         import CoursesPage       
         from ui.focus_page           import FocusPage
         from ui.whitelist_page       import WhitelistPage
         from ui.profile_page         import ProfilePage
 
         self.dashboard_page      = DashboardPage(self.user_id, self.db_manager)
         self.schedule_page       = SchedulePage(self.user_id, self.db_manager)
+        self.exams_page          = ExamsPage(self.user_id, self.db_manager) # YENİ EKLENDİ
         self.suggested_plan_page = SuggestedPlanPage(self.user_id, self.db_manager)
         self.courses_page        = CoursesPage(self.user_id, self.db_manager)
         self.focus_page          = FocusPage(self.user_id, self.db_manager)
@@ -123,11 +126,12 @@ class MainWindow(QMainWindow):
         self._page_map = {
             "dashboard":      (0, self.dashboard_page),
             "schedule":       (1, self.schedule_page),
-            "suggested_plan": (2, self.suggested_plan_page),
-            "courses":        (3, self.courses_page),
-            "focus":          (4, self.focus_page),
-            "whitelist":      (5, self.whitelist_page),
-            "profile":        (6, self.profile_page),
+            "exams":          (2, self.exams_page),           # YENİ EKLENDİ
+            "suggested_plan": (3, self.suggested_plan_page),
+            "courses":        (4, self.courses_page),
+            "focus":          (5, self.focus_page),
+            "whitelist":      (6, self.whitelist_page),
+            "profile":        (7, self.profile_page),
         }
         
         for _, page in self._page_map.values():
@@ -140,7 +144,6 @@ class MainWindow(QMainWindow):
         idx, page = self._page_map[key]
         self.stack.setCurrentIndex(idx)
 
-        # Gidilen sayfanın 'refresh' adında bir fonksiyonu varsa onu çalıştırır.
         if hasattr(page, "refresh") and callable(page.refresh):
             page.refresh()
         

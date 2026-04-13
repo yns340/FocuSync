@@ -8,12 +8,14 @@ from PyQt6.QtGui import QFont
 
 # ── DERS EKLE / DÜZENLE AÇILIR PENCERESİ (MODAL) ──
 class CourseDialog(QDialog):
-    # 1. DEĞİŞİKLİK: existing_ids parametresi eklendi
     def __init__(self, parent=None, course_data=None, is_in_schedule=False, existing_ids=None):
         super().__init__(parent)
         self.is_edit = course_data is not None
         self.is_in_schedule = is_in_schedule 
-        self.existing_ids = existing_ids if existing_ids is not None else [] # Gelen listeyi kaydet
+        self.existing_ids = existing_ids if existing_ids is not None else []
+        
+        # Sınav tarihinin üzerine yazmamak için eski veriyi hafızaya alıyoruz
+        self.existing_exam_date = course_data.get("exam_date") if self.is_edit else None
 
         self.setWindowTitle("Dersi Düzenle" if self.is_edit else "Yeni Ders Ekle")
         self.setMinimumWidth(400)
@@ -95,7 +97,7 @@ class CourseDialog(QDialog):
         slider_layout.addWidget(self.diff_label)
         form_layout.addRow("Zorluk (1-5):", slider_layout)
 
-        # 5. Haftalık Saat ve Açıklama (KİLİT MEKANİZMASI)
+        # 5. Haftalık Saat ve Açıklama
         hours_layout = QVBoxLayout()
         hours_layout.setSpacing(2)
         
@@ -106,7 +108,7 @@ class CourseDialog(QDialog):
             
         self.type_lbl = QLabel()
         if self.is_in_schedule:
-            self.hours_input.setEnabled(False) # Kilitlendi
+            self.hours_input.setEnabled(False) 
             self.hours_input.setStyleSheet("background-color: #2e3248; color: #9ca3af;")
             self.type_lbl.setText("📌 Program Dersi")
             self.type_lbl.setStyleSheet("color: #3b82f6; font-size: 11px;")
@@ -114,13 +116,6 @@ class CourseDialog(QDialog):
         hours_layout.addWidget(self.hours_input)
         hours_layout.addWidget(self.type_lbl)
         form_layout.addRow("Haftalık Saat:", hours_layout)
-
-        # 6. Sınav Tarihi
-        self.exam_input = QLineEdit()
-        self.exam_input.setPlaceholderText("Örn: 15 Nisan (İsteğe Bağlı)")
-        if self.is_edit:
-            self.exam_input.setText(course_data.get("exam_date", ""))
-        form_layout.addRow("Sınav Tarihi:", self.exam_input)
 
         layout.addLayout(form_layout)
 
@@ -152,7 +147,6 @@ class CourseDialog(QDialog):
             QMessageBox.warning(self, "Eksik Bilgi", "Lütfen bir Ders Kodu girin!")
             return
             
-        # 2. DEĞİŞİKLİK: Çift ekleme kontrolü buraya eklendi!
         if not self.is_edit and course_id in self.existing_ids:
             QMessageBox.warning(self, "Hata", f"'{course_id.upper()}' kodlu ders zaten mevcut!\nLütfen farklı bir kod girin veya olanı düzenleyin.")
             return
@@ -165,7 +159,7 @@ class CourseDialog(QDialog):
             "course_name": self.name_input.text().strip(),
             "difficulty_level": self.diff_slider.value() / 10.0,
             "weekly_hours": self.hours_input.value(),
-            "exam_date": self.exam_input.text().strip(),
+            "exam_date": self.existing_exam_date, # Sınav takviminden gelen tarihi korur!
             "is_active": self.active_cb.currentIndex() == 0 
         }
 
@@ -225,10 +219,33 @@ class CourseCard(QFrame):
         exam_lbl = QLabel(f"📅 Sınav: {exam_text}")
         exam_lbl.setStyleSheet("color: #9ca3af; font-size: 13px; border: none;")
 
+        # YENİ EKLENEN KISIM: Notları Akıllı Sıralama
+        exam_grades = course_data.get('exam_grades', {})
+        if exam_grades:
+            # 1. Hiyerarşi Önceliği
+            priority = {"Vize": 1, "Final": 2, "Bütünleme": 3, "Quiz": 4, "Proje": 5, "Ödev": 6}
+            
+            def sort_key(item):
+                key = item[0] # Örn: "Vize 1", "Final"
+                parts = key.rsplit(' ', 1)
+                base = parts[0]
+                num = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
+                return (priority.get(base, 99), num)
+            
+            # 2. Notları sırala ve metin haline getir
+            sorted_grades = sorted(exam_grades.items(), key=sort_key)
+            grades_text = " | ".join([f"{k}: {v}" for k, v in sorted_grades])
+        else:
+            grades_text = "-"
+            
+        grade_lbl = QLabel(f"📝 Notlar: {grades_text}")
+        grade_lbl.setStyleSheet("color: #9ca3af; font-size: 13px; border: none;")
+
         body_layout.addWidget(name_lbl)
         body_layout.addWidget(diff_lbl)
         body_layout.addWidget(hours_lbl)
         body_layout.addWidget(exam_lbl)
+        body_layout.addWidget(grade_lbl) 
         body_layout.addStretch() 
 
         # BUTONLAR
@@ -402,7 +419,6 @@ class CoursesPage(QWidget):
             grid.addWidget(card, row, col)
 
     def _show_add_dialog(self):
-        # 3. DEĞİŞİKLİK: Parametre olarak all_course_ids listesini gönderiyoruz
         dialog = CourseDialog(self, is_in_schedule=False, existing_ids=self.all_course_ids)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
@@ -410,7 +426,7 @@ class CoursesPage(QWidget):
 
     def _edit_course(self, course_data):
         is_in_schedule = course_data.get("course_id") in self.schedule_course_ids
-        dialog = CourseDialog(self, course_data, is_in_schedule)
+        dialog = CourseDialog(self, course_data, is_in_schedule, existing_ids=self.all_course_ids)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
             self._save_course_to_db(data)

@@ -151,13 +151,16 @@ class DatabaseManager:
     def add_course(self, user_id, course_id, course_name, difficulty_level, weekly_hours, exam_date=None, is_active=True):
         """
         Courses (Ana Tablo): Yeni bir ders oluşturur veya günceller.
-        AKILLI GÜNCELLEME: Eğer dersin ismi değişirse, 'Schedules' tablosundaki eski isimleri de bulup otomatik düzeltir.
+        COMPOSITE KEY KULLANILIR (user_id + course_id) Çakışmaları önlemek için!
         """
         try:
-            # 1. Courses tablosunu güncelle (merge=True diğer verileri silmez)
-            doc_ref = self.db.collection("Courses").document(course_id)
+            # 1. Courses tablosunu güncelle (Composite Key ile)
+            unique_doc_id = f"{user_id}_{course_id}"
+            
+            doc_ref = self.db.collection("Courses").document(unique_doc_id)
             doc_ref.set({
                 "user_id": user_id,
+                "course_id": course_id, # UI çökmesin diye kodu içeri de yazıyoruz
                 "course_name": course_name,
                 "difficulty_level": float(difficulty_level),
                 "weekly_hours": int(weekly_hours),
@@ -196,13 +199,14 @@ class DatabaseManager:
             # 1. Eski programı temizle
             self.delete_schedule(user_id)
 
-            # 2. Kullanıcının MEVCUT tüm derslerini bul (Hangilerini False yapacağımızı bilmek için)
+            # 2. Kullanıcının MEVCUT tüm derslerini bul
             existing_courses_ref = self.db.collection("Courses").where("user_id", "==", user_id).stream()
-            existing_course_ids = [doc.id for doc in existing_courses_ref]
+            existing_course_ids = [doc.to_dict().get("course_id") for doc in existing_courses_ref]
 
             # 3. Courses tablosunu güncelle (Upsert Mantığı)
             for c_id, c_info in course_hours_dict.items():
-                doc_ref = self.db.collection("Courses").document(c_id)
+                unique_doc_id = f"{user_id}_{c_id}"
+                doc_ref = self.db.collection("Courses").document(unique_doc_id)
                 
                 if c_id in existing_course_ids:
                     # Ders veritabanında zaten varsa ismini, saatini güncelle ve AKTİF yap
@@ -211,12 +215,12 @@ class DatabaseManager:
                         "weekly_hours": c_info["hours"],
                         "is_active": True
                     })
-                    # İşlenen dersi listeden çıkar ki geriye sadece "pasife çekilmesi gerekenler" kalsın
                     existing_course_ids.remove(c_id)
                 else:
                     # Ders ilk defa ekleniyorsa sıfırdan oluştur ve AKTİF yap
                     doc_ref.set({
                         "user_id": user_id,
+                        "course_id": c_id,
                         "course_name": c_info["name"],
                         "difficulty_level": 3.0, 
                         "weekly_hours": c_info["hours"],
@@ -225,9 +229,9 @@ class DatabaseManager:
                     })
 
             # 4. Programda OLMAYAN eski dersleri PASİFE ÇEK (Soft Delete)
-            # existing_course_ids listesinde kalanlar, yeni programda olmayan eski derslerdir.
             for old_c_id in existing_course_ids:
-                self.db.collection("Courses").document(old_c_id).update({
+                old_unique_id = f"{user_id}_{old_c_id}"
+                self.db.collection("Courses").document(old_unique_id).update({
                     "is_active": False
                 })
 
@@ -246,7 +250,6 @@ class DatabaseManager:
     def save_study_plan(self, user_id, plan_start_date, weekly_sessions):
         """
         StudyPlans: Zeynep'in algoritmasının ürettiği 7 günlük çalışma planını kaydeder.
-        weekly_sessions formatı: {"Pazartesi": [{"session_id": "session1", "course_id": "ceng318", "course_name": "Mikroişlemciler", "planned_duration": 45, "is_completed": False}]}
         """
         try:
             self.db.collection("StudyPlans").add({
@@ -298,13 +301,12 @@ class DatabaseManager:
     # ==========================================
 
     def get_courses(self, user_id):
-        """Kullanıcının tüm derslerini ID'leri ile birlikte getirir."""
+        """Kullanıcının tüm derslerini getirir."""
         try:
             courses = []
             docs = self.db.collection("Courses").where("user_id", "==", user_id).stream()
             for doc in docs:
                 data = doc.to_dict()
-                data["course_id"] = doc.id # Sonradan kullanmak için ID'yi de ekliyoruz
                 courses.append(data)
             return True, courses
         except Exception as e:
@@ -315,13 +317,13 @@ class DatabaseManager:
         try:
             docs = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
             for doc in docs:
-                return True, doc.to_dict() # Sadece 1 tane olacağı için ilk bulduğunu döner
+                return True, doc.to_dict() 
             return False, "Kayıtlı bir ders programı bulunamadı."
         except Exception as e:
             return False, f"Program okuma hatası: {str(e)}"
 
     def get_schedule_course_ids(self, user_id):
-        """Kullanıcının aktif haftalık programındaki benzersiz ders ID'lerini döndürür (Kilit mekanizması için)."""
+        """Kullanıcının aktif haftalık programındaki benzersiz ders ID'lerini döndürür."""
         try:
             schedules = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
             course_ids = set()
@@ -337,43 +339,59 @@ class DatabaseManager:
     def get_study_plan(self, user_id):
         """Kullanıcının güncel akıllı çalışma planını getirir."""
         try:
-            # En son oluşturulan planı getirmek için tarihe göre sıralayabiliriz
             docs = self.db.collection("StudyPlans").where("user_id", "==", user_id).stream()
             plans = [doc.to_dict() for doc in docs]
             if plans:
-                return True, plans[-1] # Şimdilik en son ekleneni dönüyoruz
+                return True, plans[-1] 
             return False, "Aktif bir çalışma planı bulunamadı."
         except Exception as e:
             return False, f"Plan okuma hatası: {str(e)}"
-
-    # (İstatistik sayfası için FocusSessions ve Violations GET fonksiyonları da eklenebilir)
 
     # ==========================================
     # DELETE (SİLME) FONKSİYONU
     # ==========================================
 
     def delete_schedule(self, user_id):
-        """Kullanıcının mevcut ders programını siler (Yeni program yüklemeden önce çağrılır)."""
+        """Kullanıcının mevcut ders programını siler ve içindeki dersleri arşive (pasife) çeker."""
         try:
             docs = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
             deleted_count = 0
             for doc in docs:
+                data = doc.to_dict()
+                routine = data.get("weekly_routine", {})
+                
+                # 1. Programdaki derslerin ID'lerini topla
+                course_ids = set()
+                for day, courses in routine.items():
+                    for c in courses:
+                        if "course_id" in c:
+                            course_ids.add(c["course_id"])
+                
+                # 2. Bu dersleri Courses tablosunda is_active = False (Pasif) yap
+                for cid in course_ids:
+                    try:
+                        unique_id = f"{user_id}_{cid}" # Composite Key Kullan
+                        self.db.collection("Courses").document(unique_id).update({"is_active": False})
+                    except Exception:
+                        pass # Eğer ders daha önceden manuel silinmişse hata vermesin
+                        
+                # 3. Programı kalıcı olarak sil
                 doc.reference.delete()
                 deleted_count += 1
             
             if deleted_count > 0:
-                return True, "Eski ders programı başarıyla silindi."
-            return True, "Silinecek eski bir program bulunamadı (Temiz)."
+                return True, "Ders programı silindi ve içindeki dersler arşive alındı."
+            return True, "Silinecek eski bir program bulunamadı."
         except Exception as e:
             return False, f"Program silme hatası: {str(e)}"
     
     def delete_course(self, user_id, course_id):
         """Kullanıcının seçtiği tekil bir dersi veritabanından kalıcı olarak siler."""
         try:
-            doc_ref = self.db.collection("Courses").document(course_id)
+            unique_doc_id = f"{user_id}_{course_id}"
+            doc_ref = self.db.collection("Courses").document(unique_doc_id)
             doc = doc_ref.get()
             
-            # Sadece ders varsa ve bu kullanıcıya aitse silmesine izin ver (Güvenlik)
             if doc.exists and doc.to_dict().get("user_id") == user_id:
                 doc_ref.delete()
                 return True, "Ders başarıyla silindi."
@@ -385,10 +403,11 @@ class DatabaseManager:
     # UPDATE (GÜNCELLEME) FONKSİYONLARI - ALGORİTMA İÇİN
     # ==========================================
 
-    def update_course_difficulty(self, course_id, new_difficulty):
+    def update_course_difficulty(self, user_id, course_id, new_difficulty):
         """SPMP Algoritması: Dersin zorluk seviyesini günceller."""
         try:
-            doc_ref = self.db.collection("Courses").document(course_id)
+            unique_doc_id = f"{user_id}_{course_id}"
+            doc_ref = self.db.collection("Courses").document(unique_doc_id)
             doc_ref.update({"difficulty_level": float(new_difficulty)})
             return True, "Ders zorluğu algoritma tarafından güncellendi."
         except Exception as e:
@@ -397,8 +416,6 @@ class DatabaseManager:
     def mark_session_completed(self, plan_id, day, session_id):
         """
         Kamera modülü bittiğinde, StudyPlans içindeki spesifik bir oturumu 'Tamamlandı' (True) yapar.
-        Not: Firebase'de iç içe geçmiş sözlükleri güncellemek için önce belgeyi okuyup, 
-        değişikliği yapıp tekrar kaydetmek en güvenli yoldur.
         """
         try:
             doc_ref = self.db.collection("StudyPlans").document(plan_id)
@@ -406,7 +423,6 @@ class DatabaseManager:
             
             if doc.exists:
                 plan_data = doc.to_dict()
-                # İlgili günün içindeki oturumları ara
                 if day in plan_data.get("weekly_sessions", {}):
                     sessions = plan_data["weekly_sessions"][day]
                     for session in sessions:
@@ -414,10 +430,108 @@ class DatabaseManager:
                             session["is_completed"] = True
                             break
                     
-                    # Güncellenmiş veriyi tekrar Firebase'e yaz
                     doc_ref.update({"weekly_sessions": plan_data["weekly_sessions"]})
                     return True, "Oturum başarıyla tamamlandı olarak işaretlendi."
             
             return False, "Plan veya oturum bulunamadı."
         except Exception as e:
             return False, f"Oturum güncelleme hatası: {str(e)}"
+
+    # ==========================================
+    # SINAV TAKVİMİ (EXAMS) FONKSİYONLARI
+    # ==========================================
+
+    def save_exam_schedule(self, user_id, exam_schedule_name, exams_list):
+        """Kullanıcının sınav takvimini kaydeder ve Courses tablosundaki tarih ve notları SENKRONİZE eder."""
+        try:
+            docs = self.db.collection("Exams").where("user_id", "==", user_id).stream()
+            exam_doc_ref = None
+            for doc in docs:
+                exam_doc_ref = doc.reference
+                break
+                
+            exam_data = {
+                "user_id": user_id,
+                "exam_schedule_name": exam_schedule_name,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+                "exams": exams_list
+            }
+
+            if exam_doc_ref:
+                exam_doc_ref.update(exam_data)
+            else:
+                self.db.collection("Exams").add(exam_data)
+
+            # --- KUSURSUZ SENKRONİZASYON (CASCADE SYNC) ---
+            # 1. Her ders için tarih ve notları toparla
+            course_updates = {}
+            for exam in exams_list:
+                c_id = exam.get("course_id")
+                if not c_id: continue
+                
+                e_date = exam.get("exam_date", "")
+                e_type = exam.get("exam_type", "Sınav")
+                e_grade = exam.get("exam_grade", "").strip()
+
+                if c_id not in course_updates:
+                    course_updates[c_id] = {"exam_date": e_date, "exam_grades": {}}
+                
+                if e_grade: # Sadece not girilmişse sözlüğe ekle
+                    course_updates[c_id]["exam_grades"][e_type] = e_grade
+
+            # 2. Kullanıcının tüm derslerini çek
+            courses_ref = self.db.collection("Courses").where("user_id", "==", user_id).stream()
+            user_courses = {doc.to_dict().get("course_id"): doc.reference for doc in courses_ref}
+
+            # 3. İlgili dersleri güncelle, listede olmayanların (silinenlerin) notlarını temizle
+            for c_id, doc_ref in user_courses.items():
+                if c_id in course_updates:
+                    doc_ref.update(course_updates[c_id])
+                else:
+                    # Ders artık sınav takviminde yoksa tarih ve notları sıfırla!
+                    doc_ref.update({"exam_date": "", "exam_grades": {}})
+
+            return True, "Sınav takvimi ve ders notları başarıyla senkronize edildi."
+        except Exception as e:
+            return False, f"Hata: {str(e)}"
+
+    def get_exam_schedule(self, user_id):
+        try:
+            docs = self.db.collection("Exams").where("user_id", "==", user_id).stream()
+            for doc in docs:
+                return True, doc.to_dict() 
+            return False, "Kayıtlı bir sınav takvimi bulunamadı."
+        except Exception as e:
+            return False, f"Hata: {str(e)}"
+
+    def delete_exam_schedule(self, user_id):
+        """Takvimi siler ve Courses tablosundaki tüm tarih ve notları temizler."""
+        try:
+            docs = self.db.collection("Exams").where("user_id", "==", user_id).stream()
+            deleted_count = 0
+            
+            for doc in docs:
+                exam_data = doc.to_dict()
+                exams_list = exam_data.get("exams", [])
+                
+                # Derslere gidip notları ve tarihleri temizle
+                for exam in exams_list:
+                    c_id = exam.get("course_id")
+                    if c_id:
+                        unique_id = f"{user_id}_{c_id}"
+                        try:
+                            self.db.collection("Courses").document(unique_id).update({
+                                "exam_date": "",
+                                "exam_grades": {}
+                            })
+                        except Exception:
+                            pass 
+                            
+                doc.reference.delete()
+                deleted_count += 1
+            
+            if deleted_count > 0:
+                return True, "Sınav takvimi silindi ve ders kartlarındaki notlar temizlendi."
+            return True, "Silinecek eski bir takvim bulunamadı."
+        except Exception as e:
+            return False, f"Takvim silme hatası: {str(e)}"
