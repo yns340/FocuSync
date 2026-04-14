@@ -301,6 +301,43 @@ class DatabaseManager:
             return True, "İhlal kaydı oluşturuldu."
         except Exception as e:
             return False, f"İhlal ekleme hatası: {str(e)}"
+    def save_whitelist_session(
+        self,
+        user_id: str,
+        violations: list[dict],
+        total_duration: int,
+        violation_duration: int,
+        total_duration_hms: str,
+        violation_duration_hms: str,
+        session_started_at=None,
+        session_ended_at=None
+    ):
+        """
+        WhitelistSessions:
+        Bir whitelist izleme seansının tüm verisini tek dökümanda kaydeder.
+        """
+        try:
+            self.db.collection("WhitelistSessions").add({
+                "user_id": user_id,
+
+                # ham saniye
+                "total_duration_seconds": int(total_duration),
+                "violation_duration_seconds": int(violation_duration),
+
+                # okunabilir format
+                "total_duration_hms": total_duration_hms,
+                "violation_duration_hms": violation_duration_hms,
+
+                "violation_count": len(violations),
+                "violations": violations,
+
+                "session_started_at": session_started_at,
+                "session_ended_at": session_ended_at,
+                "saved_at": firestore.SERVER_TIMESTAMP
+            })
+            return True, "Whitelist seansı kaydedildi."
+        except Exception as e:
+            return False, f"Whitelist seans kayıt hatası: {str(e)}"
 
     # ==========================================
     # GET (OKUMA) FONKSİYONLARI
