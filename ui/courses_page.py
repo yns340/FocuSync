@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QGridLayout, QFrame, QMessageBox, QDialog, 
-    QLineEdit, QSlider, QSpinBox, QFormLayout, QComboBox
+    QLineEdit, QSlider, QSpinBox, QFormLayout, QComboBox, QGroupBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -13,12 +13,10 @@ class CourseDialog(QDialog):
         self.is_edit = course_data is not None
         self.is_in_schedule = is_in_schedule 
         self.existing_ids = existing_ids if existing_ids is not None else []
-        
-        # Sınav tarihinin üzerine yazmamak için eski veriyi hafızaya alıyoruz
         self.existing_exam_date = course_data.get("exam_date") if self.is_edit else None
 
         self.setWindowTitle("Dersi Düzenle" if self.is_edit else "Yeni Ders Ekle")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(450)
         self.setStyleSheet("""
             QDialog { background-color: #111318; color: #e4e6ed; }
             QLabel { font-size: 14px; font-weight: bold; }
@@ -26,6 +24,8 @@ class CourseDialog(QDialog):
             QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid #00e5a0; }
             QComboBox::drop-down { border: none; }
             QComboBox QAbstractItemView { background-color: #1a1d26; color: #e4e6ed; selection-background-color: #00e5a0; selection-color: #111318; }
+            QGroupBox { font-weight: bold; color: #00e5a0; border: 1px solid #2e3248; border-radius: 8px; margin-top: 15px; padding-top: 20px; }
+            QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 5px; }
         """)
 
         layout = QVBoxLayout(self)
@@ -35,7 +35,6 @@ class CourseDialog(QDialog):
         form_layout = QFormLayout()
         form_layout.setSpacing(15)
 
-        # 1. Ders Kodu (ID)
         self.id_input = QLineEdit()
         self.id_input.setPlaceholderText("Örn: CENG318 (Zorunlu)")
         if self.is_edit:
@@ -44,88 +43,117 @@ class CourseDialog(QDialog):
             self.id_input.setStyleSheet("background-color: #2e3248; color: #9ca3af; border: none;")
         form_layout.addRow("Ders Kodu (ID):", self.id_input)
 
-        # 2. Ders Adı
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Örn: Mikroişlemciler")
         if self.is_edit:
             self.name_input.setText(course_data.get("course_name", ""))
         form_layout.addRow("Ders Adı:", self.name_input)
 
-        # 3. Durum (Aktiflik)
         active_layout = QVBoxLayout()
         active_layout.setSpacing(2)
-        
         self.active_cb = QComboBox()
         self.active_cb.addItems(["✅ Aktif", "📦 Aktif Değil (Arşivlendi)"])
         self.active_lbl = QLabel() 
-        
         if self.is_edit and not course_data.get("is_active", True):
             self.active_cb.setCurrentIndex(1)
-            
         if self.is_in_schedule:
             self.active_cb.setCurrentIndex(0)
             self.active_cb.setEnabled(False)
             self.active_cb.setStyleSheet("background-color: #2e3248; color: #9ca3af;")
             self.active_lbl.setText("📌 Program Dersi")
             self.active_lbl.setStyleSheet("color: #3b82f6; font-size: 11px;")
-            
         active_layout.addWidget(self.active_cb)
-        if self.is_in_schedule:
-            active_layout.addWidget(self.active_lbl) 
-            
+        if self.is_in_schedule: active_layout.addWidget(self.active_lbl) 
         form_layout.addRow("Durum:", active_layout)
 
-        # 4. Zorluk Seviyesi (Slider)
         slider_layout = QHBoxLayout()
         self.diff_slider = QSlider(Qt.Orientation.Horizontal)
         self.diff_slider.setRange(10, 50)
         self.diff_slider.setSingleStep(5)
-        self.diff_slider.setStyleSheet("""
-            QSlider::groove:horizontal { border-radius: 4px; height: 8px; background: #2e3248; }
-            QSlider::handle:horizontal { background: #00e5a0; width: 16px; margin: -4px 0; border-radius: 8px; }
-        """)
-        
+        self.diff_slider.setStyleSheet("QSlider::groove:horizontal { border-radius: 4px; height: 8px; background: #2e3248; } QSlider::handle:horizontal { background: #00e5a0; width: 16px; margin: -4px 0; border-radius: 8px; }")
         self.diff_label = QLabel("3.0")
         self.diff_label.setStyleSheet("color: #00e5a0; font-weight: bold; font-size: 16px;")
-        
         start_diff = float(course_data.get("difficulty_level", 3.0)) if self.is_edit else 3.0
         self.diff_slider.setValue(int(start_diff * 10))
         self.diff_label.setText(str(start_diff))
         self.diff_slider.valueChanged.connect(lambda v: self.diff_label.setText(f"{v/10.0:.1f}"))
-        
-        slider_layout.addWidget(self.diff_slider)
-        slider_layout.addWidget(self.diff_label)
+        slider_layout.addWidget(self.diff_slider); slider_layout.addWidget(self.diff_label)
         form_layout.addRow("Zorluk (1-5):", slider_layout)
 
-        # 5. Haftalık Saat ve Açıklama
         hours_layout = QVBoxLayout()
         hours_layout.setSpacing(2)
-        
         self.hours_input = QSpinBox()
         self.hours_input.setRange(0, 20)
-        if self.is_edit:
-            self.hours_input.setValue(int(course_data.get("weekly_hours", 0)))
-            
+        if self.is_edit: self.hours_input.setValue(int(course_data.get("weekly_hours", 0)))
         self.type_lbl = QLabel()
         if self.is_in_schedule:
             self.hours_input.setEnabled(False) 
             self.hours_input.setStyleSheet("background-color: #2e3248; color: #9ca3af;")
             self.type_lbl.setText("📌 Program Dersi")
             self.type_lbl.setStyleSheet("color: #3b82f6; font-size: 11px;")
-            
         hours_layout.addWidget(self.hours_input)
         hours_layout.addWidget(self.type_lbl)
         form_layout.addRow("Haftalık Saat:", hours_layout)
 
+        # --- YENİ: HEDEF NOT ---
+        self.target_input = QSpinBox()
+        self.target_input.setRange(0, 100)
+        self.target_input.setSuffix(" Puan")
+        if self.is_edit:
+            self.target_input.setValue(int(course_data.get("target_grade", 0)))
+        form_layout.addRow("🎯 Hedef Not:", self.target_input)
         layout.addLayout(form_layout)
 
-        # Butonlar
+        # --- YENİ: SINAV AĞIRLIKLARI (YÜZDELİKLER) ---
+        self.weights_dict = {}
+        exam_grades = course_data.get("exam_grades", {}) if self.is_edit else {}
+        
+        if exam_grades:
+            weight_group = QGroupBox("📊 Sınav Ağırlıkları (Yüzdelik)")
+            wg_layout = QFormLayout(weight_group)
+            
+            info_lbl = QLabel("Uyarı: Sınav notlarını değiştirmek veya yeni sınav eklemek\niçin sol menüden 'Notlar' sekmesini kullanın.")
+            info_lbl.setStyleSheet("color: #9ca3af; font-size: 12px; font-style: italic;")
+            wg_layout.addRow(info_lbl)
+            
+            saved_weights = course_data.get("exam_weights", {})
+            
+            # Notları hiyerarşik sıralayarak ekrana bas
+            priority = {"Vize": 1, "Final": 2, "Bütünleme": 3, "Quiz": 4, "Proje": 5, "Ödev": 6}
+            def sort_key(item):
+                key = item[0]
+                parts = key.rsplit(' ', 1)
+                base = parts[0]
+                num = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
+                return (priority.get(base, 99), num)
+
+            sorted_grades = sorted(exam_grades.items(), key=sort_key)
+            
+            for e_type, e_grade in sorted_grades:
+                w_spin = QSpinBox()
+                w_spin.setRange(0, 100)
+                w_spin.setSuffix(" %")
+                w_spin.setValue(int(saved_weights.get(e_type, 0)))
+                w_spin.valueChanged.connect(self._check_weights)
+                self.weights_dict[e_type] = w_spin
+                
+                grade_disp = f"({e_grade})" if e_grade else "(Girmedi)"
+                wg_layout.addRow(f"{e_type} {grade_disp}:", w_spin)
+                
+            self.weight_total_lbl = QLabel("Toplam Ağırlık: 0%")
+            self.weight_total_lbl.setStyleSheet("color: #00e5a0; font-weight: bold; font-size: 15px; margin-top: 5px;")
+            wg_layout.addRow("", self.weight_total_lbl)
+            
+            layout.addWidget(weight_group)
+
+        # BUTONLAR
         btn_layout = QHBoxLayout()
         self.save_btn = QPushButton("💾 Kaydet")
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_btn.setStyleSheet("""
             QPushButton { background-color: #00e5a0; color: #111318; border-radius: 6px; padding: 10px; font-weight: bold; font-size: 14px; }
             QPushButton:hover { background-color: #00c88c; }
+            QPushButton:disabled { background-color: #2e3248; color: #6b7280; }
         """)
         self.save_btn.clicked.connect(self.validate_and_accept)
 
@@ -140,27 +168,44 @@ class CourseDialog(QDialog):
         btn_layout.addWidget(cancel_btn)
         btn_layout.addWidget(self.save_btn)
         layout.addLayout(btn_layout)
+        
+        if exam_grades:
+            self._check_weights() # İlk açılışta kontrol et
+
+    def _check_weights(self):
+        total = sum(spin.value() for spin in self.weights_dict.values())
+        self.weight_total_lbl.setText(f"Toplam Ağırlık: {total}%")
+        
+        if total > 100:
+            self.weight_total_lbl.setStyleSheet("color: #ff5c5c; font-weight: bold; font-size: 15px; margin-top: 5px;")
+            self.save_btn.setEnabled(False)
+            self.save_btn.setText("Ağırlık %100'ü Aşamaz!")
+        else:
+            self.weight_total_lbl.setStyleSheet("color: #00e5a0; font-weight: bold; font-size: 15px; margin-top: 5px;")
+            self.save_btn.setEnabled(True)
+            self.save_btn.setText("💾 Kaydet")
 
     def validate_and_accept(self):
         course_id = self.id_input.text().strip().replace(" ", "").lower()
         if not course_id:
             QMessageBox.warning(self, "Eksik Bilgi", "Lütfen bir Ders Kodu girin!")
             return
-            
         if not self.is_edit and course_id in self.existing_ids:
             QMessageBox.warning(self, "Hata", f"'{course_id.upper()}' kodlu ders zaten mevcut!\nLütfen farklı bir kod girin veya olanı düzenleyin.")
             return
-
         self.accept()
 
     def get_data(self):
+        weights = {e_type: spin.value() for e_type, spin in self.weights_dict.items()}
         return {
             "course_id": self.id_input.text().strip().replace(" ", "").lower(),
             "course_name": self.name_input.text().strip(),
             "difficulty_level": self.diff_slider.value() / 10.0,
             "weekly_hours": self.hours_input.value(),
-            "exam_date": self.existing_exam_date, # Sınav takviminden gelen tarihi korur!
-            "is_active": self.active_cb.currentIndex() == 0 
+            "exam_date": self.existing_exam_date, 
+            "is_active": self.active_cb.currentIndex() == 0,
+            "target_grade": self.target_input.value(),
+            "exam_weights": weights
         }
 
 
@@ -180,7 +225,7 @@ class CourseCard(QFrame):
                 background-color: transparent;
             }
         """)
-        self.setFixedHeight(260) 
+        self.setFixedHeight(290) # Kart yüksekliğini biraz artırdık
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -214,42 +259,69 @@ class CourseCard(QFrame):
         hours_lbl = QLabel(f"⏱️ Haftalık: {course_data.get('weekly_hours', '-')} Saat")
         hours_lbl.setStyleSheet("color: #9ca3af; font-size: 13px; border: none;")
 
-        exam_date = course_data.get('exam_date')
-        exam_text = exam_date if exam_date else "Belirtilmedi"
-        exam_lbl = QLabel(f"📅 Sınav: {exam_text}")
-        exam_lbl.setStyleSheet("color: #9ca3af; font-size: 13px; border: none;")
+        target = course_data.get("target_grade", 0)
+        target_str = f"{target}" if target > 0 else "Belirlenmedi"
+        target_lbl = QLabel(f"⛳ Hedef Not: {target_str}")
+        target_lbl.setStyleSheet("color: #3b82f6; font-size: 13px; font-weight: bold; border: none;")
 
-        # YENİ EKLENEN KISIM: Notları Akıllı Sıralama
+        # --- MATEMATİKSEL ORTALAMA HESAPLAMA ---
         exam_grades = course_data.get('exam_grades', {})
+        exam_weights = course_data.get('exam_weights', {})
+        
+        total_earned_points = 0.0
+        total_entered_weight = 0
+        grades_text_parts = []
+        
         if exam_grades:
-            # 1. Hiyerarşi Önceliği
             priority = {"Vize": 1, "Final": 2, "Bütünleme": 3, "Quiz": 4, "Proje": 5, "Ödev": 6}
-            
             def sort_key(item):
-                key = item[0] # Örn: "Vize 1", "Final"
+                key = item[0]
                 parts = key.rsplit(' ', 1)
                 base = parts[0]
                 num = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
                 return (priority.get(base, 99), num)
             
-            # 2. Notları sırala ve metin haline getir
             sorted_grades = sorted(exam_grades.items(), key=sort_key)
-            grades_text = " | ".join([f"{k}: {v}" for k, v in sorted_grades])
-        else:
-            grades_text = "-"
             
+            for e_type, grade_str in sorted_grades:
+                grades_text_parts.append(f"{e_type}: {grade_str}")
+                
+                weight = exam_weights.get(e_type, 0)
+                try:
+                    grade_val = float(grade_str)
+                    if weight > 0:
+                        total_earned_points += (grade_val * weight) / 100.0
+                        total_entered_weight += weight
+                except ValueError:
+                    pass
+                    
+            grades_text = " | ".join(grades_text_parts)
+        else:
+            grades_text = "Henüz sınav girilmedi."
+
         grade_lbl = QLabel(f"📝 Notlar: {grades_text}")
-        grade_lbl.setStyleSheet("color: #9ca3af; font-size: 13px; border: none;")
+        grade_lbl.setStyleSheet("color: #9ca3af; font-size: 12px; border: none;")
+        grade_lbl.setWordWrap(True)
+
+        # Güncel Ortalama Çıktısı
+        if total_entered_weight > 0:
+            current_avg = (total_earned_points * 100) / total_entered_weight
+            avg_lbl = QLabel(f"📈 Güncel Ort: {current_avg:.1f} (Cepte: {total_earned_points:.1f} Puan)")
+            avg_lbl.setStyleSheet("color: #00e5a0; font-size: 13px; font-weight: bold; border: none;")
+        else:
+            avg_lbl = QLabel("📈 Güncel Ort: Hesaplanamıyor (Ağırlık Yok)")
+            avg_lbl.setStyleSheet("color: #6b7280; font-size: 12px; font-style: italic; border: none;")
 
         body_layout.addWidget(name_lbl)
         body_layout.addWidget(diff_lbl)
         body_layout.addWidget(hours_lbl)
-        body_layout.addWidget(exam_lbl)
+        body_layout.addWidget(target_lbl)
+        body_layout.addWidget(avg_lbl)
         body_layout.addWidget(grade_lbl) 
         body_layout.addStretch() 
 
         # BUTONLAR
-        edit_btn = QPushButton("✏️ Düzenle")
+        edit_btn = QPushButton("✏️ Ağırlıkları / Dersi Düzenle")
         edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         edit_btn.setStyleSheet("""
             QPushButton { background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border: 1px solid #3b82f6; border-radius: 6px; padding: 6px; font-size: 13px; font-weight: bold; }
@@ -334,7 +406,7 @@ class CoursesPage(QWidget):
         top_header_bg.setStyleSheet("background-color: #1a1d26; border-radius: 8px;")
         top_header_layout = QHBoxLayout(top_header_bg)
         top_header_layout.setContentsMargins(15, 12, 15, 12)
-        top_title = QLabel("✅ Aktif Dersler (Program Dersleri veya Ekstra Dersler)")
+        top_title = QLabel("✅ Aktif Dersler")
         top_title.setStyleSheet("color: #00e5a0; font-size: 16px; font-weight: bold; background: transparent;")
         top_header_layout.addWidget(top_title)
         top_header_layout.addStretch()
@@ -439,7 +511,9 @@ class CoursesPage(QWidget):
             difficulty_level=data["difficulty_level"],
             weekly_hours=data["weekly_hours"],
             exam_date=data["exam_date"],
-            is_active=data["is_active"] 
+            is_active=data["is_active"],
+            target_grade=data["target_grade"],
+            exam_weights=data["exam_weights"] 
         )
         if success:
             self.load_data() 

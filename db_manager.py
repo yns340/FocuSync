@@ -148,41 +148,47 @@ class DatabaseManager:
     # PROJE MİMARİSİ FONKSİYONLARI (FocuSync SPMP)
     # ==========================================
 
-    def add_course(self, user_id, course_id, course_name, difficulty_level, weekly_hours, exam_date=None, is_active=True):
+    def add_course(self, user_id, course_id, course_name, difficulty_level, weekly_hours, exam_date=None, is_active=True, target_grade=0, exam_weights=None):
         """
         Courses (Ana Tablo): Yeni bir ders oluşturur veya günceller.
         COMPOSITE KEY KULLANILIR (user_id + course_id) Çakışmaları önlemek için!
         """
         try:
-            # 1. Courses tablosunu güncelle (Composite Key ile)
             unique_doc_id = f"{user_id}_{course_id}"
-            
             doc_ref = self.db.collection("Courses").document(unique_doc_id)
-            doc_ref.set({
+            
+            update_data = {
                 "user_id": user_id,
-                "course_id": course_id, # UI çökmesin diye kodu içeri de yazıyoruz
+                "course_id": course_id, 
                 "course_name": course_name,
                 "difficulty_level": float(difficulty_level),
                 "weekly_hours": int(weekly_hours),
-                "exam_date": exam_date,
-                "is_active": is_active
-            }, merge=True) 
+                "is_active": is_active,
+                "target_grade": int(target_grade)
+            }
+            
+            # Tarih None değilse güncelle (eski veriyi silmemek için)
+            if exam_date is not None:
+                update_data["exam_date"] = exam_date
+                
+            # Sınav ağırlıkları sözlüğü gelmişse güncelle
+            if exam_weights is not None:
+                update_data["exam_weights"] = exam_weights
 
-            # 2. CASCADE UPDATE: Programdaki (Schedules) ismi de güncelle
+            # Merge=True sayesinde, dokümanda var olan exam_grades gibi diğer alanlar SİLİNMEZ!
+            doc_ref.set(update_data, merge=True) 
+
+            # CASCADE UPDATE: Programdaki (Schedules) ismi de güncelle
             schedules = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
             for schedule in schedules:
                 sched_data = schedule.to_dict()
                 routine = sched_data.get("weekly_routine", {})
                 updated = False
-
                 for day, courses in routine.items():
                     for c in courses:
-                        # Eğer id eşleşirse ve isim değişmişse günceller
                         if c.get("course_id") == course_id and c.get("course_name") != course_name:
                             c["course_name"] = course_name
                             updated = True
-
-                # Eğer programda bir şey değiştiyse Firebase'i yenile
                 if updated:
                     schedule.reference.update({"weekly_routine": routine})
 
