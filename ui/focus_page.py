@@ -1,9 +1,12 @@
+import numpy as np
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-    QFrame, QSpinBox, QMessageBox
+    QFrame, QSpinBox, QMessageBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont, QColor, QPainter, QPen
+from PyQt6.QtGui import QFont, QColor, QPainter, QPen, QImage, QPixmap
+
+from head_tracker import HeadTracker 
 
 class FocusCircle(QWidget):
     def __init__(self, size=120, parent=None):
@@ -67,9 +70,13 @@ class FocusPage(QWidget):
         super().__init__(parent)
         self.user_id = user_id
         self.db_manager = db_manager
+        
         self._session_active = False
         self._elapsed = 0
         self._focused_elapsed = 0
+        
+        self.tracker = None
+        self.is_user_focused = True 
         
         self._timer = QTimer()
         self._timer.timeout.connect(self._tick)
@@ -93,58 +100,65 @@ class FocusPage(QWidget):
         main_row = QHBoxLayout(); main_row.setSpacing(16)
         left = QVBoxLayout(); left.setSpacing(14)
 
-        # Kamera Arayüzü (Core silindi, sadece UI tepkisi var)
+        # --- KAMERA KARTI ---
         cam_card = QFrame()
         cam_card.setStyleSheet("background:#111318;border:1px solid #1e2130;border-radius:14px;")
         cl = QVBoxLayout(cam_card); cl.setContentsMargins(16,14,16,14); cl.setSpacing(10)
         ch = QHBoxLayout()
-        ch.addWidget(self._sec("Kamera (Arayüz Testi)"))
+        ch.addWidget(self._sec("Kamera Durumu"))
         self.cam_status_lbl = QLabel("⬤  Kapalı")
         self.cam_status_lbl.setStyleSheet("color:#6b7280;font-size:11px;background:transparent;border:none;")
         ch.addStretch(); ch.addWidget(self.cam_status_lbl)
         cl.addLayout(ch)
 
         cam_frame = QFrame()
-        cam_frame.setStyleSheet("background:#0a0c10;border:1px dashed #1e2130;border-radius:10px;min-height:200px;")
+        cam_frame.setStyleSheet("background:#0a0c10;border:1px dashed #1e2130;border-radius:10px;")
         cfl = QVBoxLayout(cam_frame); cfl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.cam_placeholder = QLabel("📷\nKamera Modülü (Core) Devre Dışı")
+        
+        self.cam_placeholder = QLabel("📷\nOturum Başladığında Aktif Olacak")
         self.cam_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cam_placeholder.setStyleSheet("color:#2e3248;font-size:14px;background:transparent;border:none;")
+        self.cam_placeholder.setMinimumSize(480, 320) # Kameraya devasa bir alan açtık
+        self.cam_placeholder.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        
         cfl.addWidget(self.cam_placeholder)
         cl.addWidget(cam_frame)
+        left.addWidget(cam_card, 2) # Kameraya daha fazla dikey alan verdik
 
-        cam_ctrl = QHBoxLayout()
-        self.cam_toggle_btn = QPushButton("Kamerayı Aç (UI Test)")
-        self.cam_toggle_btn.setFixedHeight(32)
-        self.cam_toggle_btn.clicked.connect(self._toggle_camera_ui)
-        cam_ctrl.addWidget(self.cam_toggle_btn)
-        cl.addLayout(cam_ctrl)
-        left.addWidget(cam_card)
-
-        # Zamanlayıcı
+        # --- ZAMANLAYICI KARTI (YENİ TASARIM) ---
         timer_card = QFrame()
         timer_card.setStyleSheet("background:#111318;border:1px solid #1e2130;border-radius:14px;")
-        tl = QHBoxLayout(timer_card); tl.setContentsMargins(20,14,20,14); tl.setSpacing(20)
+        tl = QHBoxLayout(timer_card); 
+        tl.setContentsMargins(30,20,30,20); # İç boşlukları ferahlattık
+        tl.setSpacing(20)
 
         timer_info = QVBoxLayout()
-        timer_info.addWidget(self._sec("Seans Süresi"))
+        timer_info.addWidget(self._sec("⏱️ Seans Süresi"))
         self.timer_lbl = QLabel("00:00:00")
-        self.timer_lbl.setFont(QFont("Segoe UI",34,QFont.Weight.Bold))
-        self.timer_lbl.setStyleSheet("color:#00e5a0;letter-spacing:2px;background:transparent;border:none;")
+        self.timer_lbl.setFont(QFont("Segoe UI",48,QFont.Weight.Bold)) # Yazıyı devasa yaptık
+        self.timer_lbl.setStyleSheet("color:#00e5a0;letter-spacing:4px;background:transparent;border:none;")
         timer_info.addWidget(self.timer_lbl)
-        tl.addLayout(timer_info); tl.addStretch()
+        tl.addLayout(timer_info); 
+        
+        tl.addStretch() # Sağ ve sol kutuyu birbirinden ayırır
 
         btn_col = QVBoxLayout()
+        btn_col.setAlignment(Qt.AlignmentFlag.AlignVCenter) # Butonu dikeyde ortala
         self.start_btn = QPushButton("▶  Seansı Başlat")
         self.start_btn.setObjectName("primary_btn")
-        self.start_btn.setFixedHeight(42)
+        self.start_btn.setFixedSize(220, 60) # Butonu büyüttük
+        
+        font = self.start_btn.font()
+        font.setPointSize(14) # Buton yazısını büyüttük
+        self.start_btn.setFont(font)
+        
         self.start_btn.clicked.connect(self._toggle_session)
         btn_col.addWidget(self.start_btn)
         tl.addLayout(btn_col)
-        left.addWidget(timer_card)
+        left.addWidget(timer_card, 1)
         main_row.addLayout(left, 3)
 
-        # Sağ Panel: Skor
+        # --- SAĞ PANEL (SKOR) ---
         right = QVBoxLayout(); right.setSpacing(14)
         score_card = QFrame()
         score_card.setStyleSheet("background:#111318;border:1px solid #1e2130;border-radius:14px;")
@@ -152,7 +166,8 @@ class FocusPage(QWidget):
         scl.addWidget(self._sec("Anlık Odak Skoru"))
 
         cring_row = QHBoxLayout(); cring_row.addStretch()
-        self.focus_ring = FocusCircle(120); cring_row.addWidget(self.focus_ring); cring_row.addStretch()
+        self.focus_ring = FocusCircle(140); # Skoru da biraz daha büyüttük
+        cring_row.addWidget(self.focus_ring); cring_row.addStretch()
         scl.addLayout(cring_row)
         right.addWidget(score_card)
         right.addStretch()
@@ -172,49 +187,123 @@ class FocusPage(QWidget):
 
     def _start_session(self):
         self._session_active = True
-        self._elapsed = 0; self._focused_elapsed = 0
+        self._elapsed = 0
+        self._focused_elapsed = 0
+        self.is_user_focused = True
+
+        self.tracker = HeadTracker()
+        self.tracker.focus_status_changed.connect(self._on_focus_changed)
+        self.tracker.face_missing.connect(self._on_face_missing)
+        self.tracker.error_occurred.connect(self._on_error)
+        self.tracker.session_completed.connect(self._on_session_completed)
+        
+        # 🔥 YENİ: Kamera görüntüsünü bağladık
+        self.tracker.frame_processed.connect(self._on_frame_processed)
+        
+        self.tracker.start()
+
+        self.cam_status_lbl.setText("⬤  Aktif")
+        self.cam_status_lbl.setStyleSheet("color:#00e5a0;font-size:11px;background:transparent;border:none;")
+        self.cam_placeholder.setText("Kamera Yükleniyor...")
+
         self.focus_ring.set_value(100, "#00e5a0")
         self._timer.start(1000)
         self.start_btn.setText("⏹  Seansı Bitir")
         self.start_btn.setObjectName("danger_btn")
         self.start_btn.style().unpolish(self.start_btn); self.start_btn.style().polish(self.start_btn)
-        self.notif.show_warning("▶","Odak seansı başladı!","#00e5a0",3000)
+        self.notif.show_warning("▶","Odak seansı ve Kamera Takibi başladı!","#00e5a0",3000)
 
     def _end_session(self):
         self._session_active = False
         self._timer.stop()
         
-        # db_manager ile Firebase'e kayıt
-        actual_focus_time = self._elapsed // 60
-        score = int(self._focused_elapsed / self._elapsed * 100) if self._elapsed > 0 else 0
-        success, msg = self.db_manager.add_focus_session(self.user_id, "manuel_plan", "Genel Çalışma", actual_focus_time, score, "Completed")
+        if self.tracker:
+            self.tracker.stop()
+
+        self.cam_status_lbl.setText("⬤  Kapalı")
+        self.cam_status_lbl.setStyleSheet("color:#6b7280;font-size:11px;background:transparent;border:none;")
         
-        self.notif.show_warning("✅",f"Seans tamamlandı! Firebase Kaydı: {msg}","#00e5a0",6000)
-        
+        # 🔥 YENİ: Kapanınca resmi sil ve yazıyı geri getir
+        self.cam_placeholder.clear()
+        self.cam_placeholder.setText("📷\nKamera Beklemede")
+
         self.start_btn.setText("▶  Seansı Başlat")
         self.start_btn.setObjectName("primary_btn")
         self.start_btn.style().unpolish(self.start_btn); self.start_btn.style().polish(self.start_btn)
         self._elapsed = 0
         self.timer_lbl.setText("00:00:00")
 
+    # ==========================================
+    # 🔥 HEAD TRACKER SİNYAL YAKALAYICILARI
+    # ==========================================
+    
+    def _on_frame_processed(self, frame):
+        """HeadTracker'dan gelen canlı kamera karesini UI üzerinde renderlar."""
+        h, w, ch = frame.shape
+        bytes_per_line = ch * w
+        
+        # Numpy array'ini PyQt'nin anlayacağı resim formatına (QImage) çevir
+        q_img = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        pixmap = QPixmap.fromImage(q_img)
+        
+        # Resmi QLabel kutusuna tam sığacak ama oranını bozmayacak şekilde ölçekle
+        scaled_pixmap = pixmap.scaled(
+            self.cam_placeholder.size(), 
+            Qt.AspectRatioMode.KeepAspectRatio, 
+            Qt.TransformationMode.SmoothTransformation
+        )
+        
+        self.cam_placeholder.setPixmap(scaled_pixmap)
+
+    def _on_focus_changed(self, is_focused):
+        self.is_user_focused = is_focused
+        if not is_focused:
+            self.notif.show_warning("🔴", "Dikkat Dağıldı! Lütfen ekrana odaklanın.", "#ff6b35", 3000)
+
+    def _on_face_missing(self, is_missing):
+        if is_missing:
+            self.is_user_focused = False
+            self.notif.show_warning("⚠️", "Yüz bulunamadı! Lütfen kameraya görünün.", "#f59e0b", 3000)
+
+    def _on_error(self, msg):
+        QMessageBox.critical(self, "Kamera Hatası", f"Beklenmeyen bir donanım hatası oluştu:\n{msg}")
+        self._end_session()
+
+    def _on_session_completed(self, session_data):
+        actual_focus_time = session_data["actual_focus_time"] 
+        score = session_data["focus_score"] 
+        head_tilt = session_data["head_tilt_degree"] 
+
+        try:
+            success, msg = self.db_manager.add_focus_session(
+                self.user_id,             
+                "manuel_plan",            
+                "Genel Çalışma",          
+                actual_focus_time,        
+                head_tilt,                
+                score,                    
+                "Completed"               
+            )
+            self.notif.show_warning("✅",f"Seans tamamlandı! Veritabanına kaydedildi. Skor: %{score}", "#00e5a0", 6000)
+        except Exception as e:
+            QMessageBox.critical(self, "Bağlantı Hatası", f"Veritabanına bağlanılamadı! İnternet bağlantınızı kontrol edin.\n\nDetay: {str(e)}")
+
     def _tick(self):
         self._elapsed += 1
-        self._focused_elapsed += 1 # Basit test için tam odak kabul ediyoruz
+        if self.is_user_focused:
+            self._focused_elapsed += 1 
+            
         h = self._elapsed // 3600; m = (self._elapsed % 3600) // 60; s = self._elapsed % 60
         self.timer_lbl.setText(f"{h:02d}:{m:02d}:{s:02d}")
 
-    def _toggle_camera_ui(self):
-        # Sadece UI durumu değişir, gerçek kamera açılmaz
-        if "Aç" in self.cam_toggle_btn.text():
-            self.cam_toggle_btn.setText("Kamerayı Kapat (UI Test)")
-            self.cam_status_lbl.setText("⬤  Aktif (Sanal)")
-            self.cam_status_lbl.setStyleSheet("color:#00e5a0;font-size:11px;background:transparent;border:none;")
-            self.cam_placeholder.setText("📷\n(Kamera Arayüzü Aktif)")
-        else:
-            self.cam_toggle_btn.setText("Kamerayı Aç (UI Test)")
-            self.cam_status_lbl.setText("⬤  Kapalı")
-            self.cam_status_lbl.setStyleSheet("color:#6b7280;font-size:11px;background:transparent;border:none;")
-            self.cam_placeholder.setText("📷\nKamera Modülü (Core) Devre Dışı")
+        if self._elapsed > 0:
+            current_score = int((self._focused_elapsed / self._elapsed) * 100)
+            color = "#00e5a0"
+            if current_score < 50: color = "#ff6b35"
+            elif current_score < 80: color = "#f59e0b"
+            self.focus_ring.set_value(current_score, color)
 
     def cleanup(self):
         self._timer.stop()
+        if self.tracker:
+            self.tracker.stop()
