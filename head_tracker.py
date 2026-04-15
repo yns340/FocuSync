@@ -13,8 +13,9 @@ class HeadTracker(QThread):
     focus_status_changed = pyqtSignal(bool)
     face_missing = pyqtSignal(bool)
     error_occurred = pyqtSignal(str)
-
     session_completed = pyqtSignal(dict)
+
+    frame_processed = pyqtSignal(np.ndarray)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -29,19 +30,19 @@ class HeadTracker(QThread):
         )
 
         self.detector = FaceLandmarker.create_from_options(options)
-        #  KALİBRASYON VE LİMİT DEĞİŞKENLERİ
-        self.PITCH_LIMIT = 20  # Biraz daha esnetildi
-        self.YAW_LIMIT = 25
+        # 🔥 KALİBRASYON VE LİMİT DEĞİŞKENLERİ
+        self.PITCH_LIMIT = 16  # Eski hali 20'ydi. (Yukarı/Aşağı kafa eğme toleransı)
+        self.YAW_LIMIT = 18    # Eski hali 25'ti. (Sağa/Sola kafa çevirme toleransı)
         self.is_calibrated = False
         self.calibration_frames = []
         self.base_pitch = 0.0
         self.base_yaw = 0.0
 
-        # DURUM TAKİBİ (STATE MACHINE) VE TAMPON (DEBOUNCE)
-        self.current_focus_state = True   # Sistemin son bildiği odak durumu
-        self.current_face_missing = False # Sistemin son bildiği yüz durumu
-        self.out_of_bounds_frames = 0     # Sınırın aşıldığı ardışık kare sayısı
-        self.REQUIRED_FRAMES = 5          # Dikkat dağıldı demek için geçmesi gereken tolerans süresi (yaklaşık 0.3 saniye)
+        # 🔥 DURUM TAKİBİ (STATE MACHINE) VE TAMPON (DEBOUNCE)
+        self.current_focus_state = True   
+        self.current_face_missing = False 
+        self.out_of_bounds_frames = 0     
+        self.REQUIRED_FRAMES = 4          
         
         #KRONOMETRE VE VERİ TOPLAMA
         self.total_session_time = 0.0 # Saniye cinsinden
@@ -78,6 +79,8 @@ class HeadTracker(QThread):
                 continue
 
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            self.frame_processed.emit(rgb_frame)
 
             # 🔥 MEDIAPIPE IMAGE FORMAT
             mp_image = Image(
