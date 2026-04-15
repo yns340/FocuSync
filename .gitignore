@@ -4,6 +4,8 @@ venv/
 # Firebase VIP Giriş Kartı (Şifre) --- Veritabanının şifresinin internete sızmasını kesin olarak önler.
 serviceAccountKey.json
 
+geminiKey.json
+
 # Python Geçici Dosyaları
 __pycache__/
 

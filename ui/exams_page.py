@@ -518,7 +518,7 @@ class ExamsPage(QWidget):
         self.table.setCellWidget(r, 6, grade_edit)
 
     def _import_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Sınav Takvimi Seç", "", "PDF Dosyaları (*.pdf)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Sınav Takvimi Seç", "", "PDF Dosyaları (*.pdf *.png *.jpg *.jpeg)")
         if file_path:
             self.upload_btn.setText("\n⏳\n\nPDF Okunuyor, Lütfen Bekleyin...\n")
             self.upload_btn.repaint()

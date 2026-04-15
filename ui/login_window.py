@@ -72,6 +72,7 @@ class LoginWindow(QWidget):
 
         btn = QPushButton("Giriş Yap"); btn.setObjectName("primary_btn")
         btn.setFixedHeight(44); btn.setFont(QFont("Segoe UI",13,QFont.Weight.Bold))
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(self._do_login); lay.addWidget(btn)
         lay.addStretch()
 

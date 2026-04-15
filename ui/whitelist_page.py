@@ -1,6 +1,5 @@
 import os
 import sys
-import winsound
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -10,6 +9,18 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QShortcut, QKeySequence
+
+# Sadece Windows'ta çalışan winsound kütüphanesini Mac'te çökmemesi için güvenli içe aktarma
+try:
+    import winsound
+except ImportError:
+    # Mac ve Linux için sahte (dummy) bir winsound oluşturuyoruz ki kodun aşağısında hata vermesin
+    class DummySound:
+        def Beep(self, freq, duration): pass
+        def PlaySound(self, sound, flags): pass
+        SND_ALIAS = 0
+        SND_ASYNC = 0
+    winsound = DummySound()
 
 try:
     from whitelist_functionality import (

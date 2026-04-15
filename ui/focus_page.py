@@ -151,7 +151,25 @@ class FocusPage(QWidget):
         font = self.start_btn.font()
         font.setPointSize(14) # Buton yazısını büyüttük
         self.start_btn.setFont(font)
-        
+        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #00e5a0;
+                border: 2px solid #00e5a0;
+                border-radius: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #00e5a0;
+                color: #111318;
+            }
+            QPushButton:pressed {
+                background-color: #00e5a0;
+                color: #111318;
+            }
+        """)
+
         self.start_btn.clicked.connect(self._toggle_session)
         btn_col.addWidget(self.start_btn)
         tl.addLayout(btn_col)

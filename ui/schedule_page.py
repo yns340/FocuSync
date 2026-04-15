@@ -348,7 +348,7 @@ class SchedulePage(QWidget):
         self.table.setCellWidget(row_idx, 4, type_cb)
 
     def _import_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Ders Programı Seç", "", "PDF Dosyaları (*.pdf)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Ders Programı Seç", "", "PDF Dosyaları (*.pdf *.png *.jpg *.jpeg)")
         if file_path:
             self.upload_btn.setText("\n⏳\n\nPDF Okunuyor, Lütfen Bekleyin...\n")
             self.upload_btn.repaint()
