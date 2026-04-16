@@ -5,8 +5,22 @@ from PyQt6.QtWidgets import (
     QMessageBox, QComboBox, QTimeEdit, QAbstractItemView, QListView,
     QLineEdit, QStackedWidget, QCheckBox, QSpinBox, QDateEdit
 )
-from PyQt6.QtCore import Qt, QTime, QDate, pyqtSignal
+from PyQt6.QtCore import Qt, QTime, QDate, pyqtSignal, QThread
 from PyQt6.QtGui import QFont
+
+# --- ARKA PLAN OCR İŞÇİSİ ---
+class OCRWorker(QThread):
+    finished_signal = pyqtSignal(bool, str, object)
+
+    def __init__(self, file_path):
+        super().__init__()
+        self.file_path = file_path
+
+    def run(self):
+        from ocr_manager import OCRManager
+        ocr = OCRManager()
+        success, doc_type, result_data = ocr.parse_pdf(self.file_path)
+        self.finished_signal.emit(success, doc_type, result_data)
 
 # --- 1. ÖZEL DERS BİLGİSİ WIDGET'I ---
 class ExamEditWidget(QWidget):
@@ -518,61 +532,82 @@ class ExamsPage(QWidget):
         self.table.setCellWidget(r, 6, grade_edit)
 
     def _import_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Sınav Takvimi Seç", "", "PDF Dosyaları (*.pdf *.png *.jpg *.jpeg)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Sınav Takvimi Seç", "", "PDF veya Resim (*.pdf *.png *.jpg *.jpeg)")
         if file_path:
-            self.upload_btn.setText("\n⏳\n\nPDF Okunuyor, Lütfen Bekleyin...\n")
+            # 1. Bekleme yazısını göster ve butonu kilitle
+            self.upload_btn.setText("\n⏳\n\nBelge OCR ve AI yardımı ile okunuyor...\nLütfen bekleyin.\n")
+            self.upload_btn.setEnabled(False) # Tekrar tıklanmasın diye kapat
+
+            self.upload_btn.setStyleSheet("""
+                QPushButton { 
+                    background-color: rgba(245, 158, 11, 0.15); 
+                    color: #f59e0b; 
+                    border: 2px dashed #f59e0b; 
+                    border-radius: 12px; 
+                    padding: 30px; 
+                }
+            """)
+
             self.upload_btn.repaint()
             
-            from ocr_manager import OCRManager
-            ocr = OCRManager()
-            success, doc_type, result_data = ocr.parse_pdf(file_path)
+            # 2. Yardımcı işçiyi (Thread) başlat
+            self.ocr_worker = OCRWorker(file_path)
+            self.ocr_worker.finished_signal.connect(self._on_import_finished)
+            self.ocr_worker.start()
 
-            if not success:
-                QMessageBox.warning(self, "Hata", result_data)
-                self.upload_btn.setText("\n📄\n\nSınav Takvimi Yükle\n(Mevcut kayıtların üzerine eklenir)\n")
-                return
-                
-            if doc_type == "schedule":
-                QMessageBox.warning(self, "Yanlış Menü", "Yüklediğiniz dosya bir 'Haftalık Ders Programı'.\nLütfen bu dosyayı soldaki 'Sabit Ders Programı' menüsünden yükleyin.")
-                self.upload_btn.setText("\n📄\n\nSınav Takvimi Yükle\n(Mevcut kayıtların üzerine eklenir)\n")
-                return
+    def _on_import_finished(self, success, doc_type, result_data):
+        # 3. Yardımcı işçi görevini bitirdi, butonu geri aç
+        self.upload_btn.setEnabled(True)
 
-            success_c, courses_data = self.db_manager.get_courses(self.user_id)
-            active_course_ids = []
-            if success_c:
-                active_course_ids = [c.get("course_id", "").lower() for c in courses_data if c.get("is_active", True)]
+        self.upload_btn.setStyleSheet("""
+            QPushButton { background-color: #1a1d26; color: #6b7280; border: 2px dashed #2e3248; border-radius: 12px; padding: 30px; }
+            QPushButton:hover { background-color: #1e2130; border: 2px dashed #00e5a0; color: #e4e6ed; }
+        """)
 
-            added_count = 0
-            selected_count = 0
+        if not success:
+            QMessageBox.warning(self, "Hata", result_data)
+            self.upload_btn.setText("\n📄\n\nSınav Takvimi Yükle\n(Mevcut kayıtların üzerine eklenir)\n")
+            return
             
-            for ex in result_data:
-                c_code = ex.get("course_id", "")
-                
-                safe_etype = self._get_available_exam_type(c_code, ex.get("exam_type", "Vize"))
-                
-                is_sel = (c_code.lower() in active_course_ids) if c_code else False
-                if is_sel: selected_count += 1
-                
-                self._add_table_row(
-                    date=ex.get("exam_date", ""),
-                    time=ex.get("exam_time", "10:00"),
-                    code=c_code,
-                    name=ex.get("course_name", ""),
-                    etype=safe_etype,
-                    room=ex.get("notes", ""), 
-                    grade="", 
-                    is_selected=is_sel
-                )
-                added_count += 1
+        if doc_type == "schedule":
+            QMessageBox.warning(self, "Yanlış Menü", "Yüklediğiniz dosya bir 'Haftalık Ders Programı'.\nLütfen bu dosyayı soldaki 'Sabit Ders Programı' menüsünden yükleyin.")
+            self.upload_btn.setText("\n📄\n\nSınav Takvimi Yükle\n(Mevcut kayıtların üzerine eklenir)\n")
+            return
 
-            if added_count == 0:
-                QMessageBox.information(self, "Uyarı", "PDF okundu ancak uygun formatta kayıt bulunamadı.")
-                self.upload_btn.setText("\n📄\n\nSınav Takvimi Yükle\n(Mevcut kayıtların üzerine eklenir)\n")
-            else:
-                self.editor_wrapper.setVisible(True)
-                msg = f"\n✅\n\nBaşarıyla {added_count} Not Eklendi\n"
-                msg += f"({selected_count} tanesi mevcut derslerinizle eşleşti)\n"
-                self.upload_btn.setText(msg)
+        success_c, courses_data = self.db_manager.get_courses(self.user_id)
+        active_course_ids = []
+        if success_c:
+            active_course_ids = [c.get("course_id", "").lower() for c in courses_data if c.get("is_active", True)]
+
+        added_count = 0
+        selected_count = 0
+        
+        for ex in result_data:
+            c_code = ex.get("course_id", "")
+            safe_etype = self._get_available_exam_type(c_code, ex.get("exam_type", "Vize"))
+            is_sel = (c_code.lower() in active_course_ids) if c_code else False
+            if is_sel: selected_count += 1
+            
+            self._add_table_row(
+                date=ex.get("exam_date", ""),
+                time=ex.get("exam_time", "10:00"),
+                code=c_code,
+                name=ex.get("course_name", ""),
+                etype=safe_etype,
+                room=ex.get("notes", ""), 
+                grade="", 
+                is_selected=is_sel
+            )
+            added_count += 1
+
+        if added_count == 0:
+            QMessageBox.information(self, "Uyarı", "Belge okundu ancak uygun formatta kayıt bulunamadı.")
+            self.upload_btn.setText("\n📄\n\nSınav Takvimi Yükle\n(Mevcut kayıtların üzerine eklenir)\n")
+        else:
+            self.editor_wrapper.setVisible(True)
+            msg = f"\n✅\n\nBaşarıyla {added_count} Not Eklendi\n"
+            msg += f"({selected_count} tanesi mevcut derslerinizle eşleşti)\n"
+            self.upload_btn.setText(msg)
 
     def _delete_selected_row(self):
         cur = self.table.currentRow()

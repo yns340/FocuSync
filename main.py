@@ -3,7 +3,11 @@ main.py
 FocuSync — Akıllı Odaklanma Sistemi
 Sadece Firebase (db_manager.py) kullanan temizlenmiş giriş noktası.
 """
+import os
 import sys
+os.environ["PYTHONUTF8"] = "1"
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont
 

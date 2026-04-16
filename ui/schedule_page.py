@@ -5,10 +5,24 @@ from PyQt6.QtWidgets import (
     QMessageBox, QComboBox, QTimeEdit, QAbstractItemView, QListView,
     QLineEdit, QStackedWidget
 )
-from PyQt6.QtCore import Qt, QTime
+from PyQt6.QtCore import Qt, QTime, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from ocr_manager import OCRManager
+
+# --- ARKA PLAN OCR İŞÇİSİ ---
+class OCRWorker(QThread):
+    finished_signal = pyqtSignal(bool, str, object)
+
+    def __init__(self, file_path):
+        super().__init__()
+        self.file_path = file_path
+
+    def run(self):
+        from ocr_manager import OCRManager
+        ocr = OCRManager()
+        success, doc_type, result_data = ocr.parse_pdf(self.file_path)
+        self.finished_signal.emit(success, doc_type, result_data)
 
 class CourseEditWidget(QWidget):
     def __init__(self, code="", name="", group_id="", parent=None):
@@ -348,41 +362,62 @@ class SchedulePage(QWidget):
         self.table.setCellWidget(row_idx, 4, type_cb)
 
     def _import_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Ders Programı Seç", "", "PDF Dosyaları (*.pdf *.png *.jpg *.jpeg)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Ders Programı Seç", "", "PDF veya Resim (*.pdf *.png *.jpg *.jpeg)")
         if file_path:
-            self.upload_btn.setText("\n⏳\n\nPDF Okunuyor, Lütfen Bekleyin...\n")
+            self.upload_btn.setText("\n⏳\n\nBelge OCR ve AI yardımı ile okunuyor...\nLütfen bekleyin.\n")
+            self.upload_btn.setEnabled(False)
+
+            self.upload_btn.setStyleSheet("""
+                QPushButton { 
+                    background-color: rgba(245, 158, 11, 0.15); 
+                    color: #f59e0b; 
+                    border: 2px dashed #f59e0b; 
+                    border-radius: 12px; 
+                    padding: 30px; 
+                }
+            """)
+
             self.upload_btn.repaint()
             
-            ocr = OCRManager()
-            success, doc_type, result_data = ocr.parse_pdf(file_path)
+            self.ocr_worker = OCRWorker(file_path)
+            self.ocr_worker.finished_signal.connect(self._on_import_finished)
+            self.ocr_worker.start()
 
-            if not success:
-                QMessageBox.warning(self, "Hata", result_data)
-                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
-                return
+    def _on_import_finished(self, success, doc_type, result_data):
+        self.upload_btn.setEnabled(True)
 
-            if doc_type == "exam":
-                QMessageBox.warning(self, "Yanlış Menü", "Yüklediğiniz dosya bir 'Sınav Takvimi'.\nLütfen bu dosyayı soldaki 'Sınav Takvimi' menüsünden yükleyin.")
-                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
-                return
+        self.upload_btn.setStyleSheet("""
+            QPushButton { background-color: #1a1d26; color: #6b7280; border: 2px dashed #2e3248; border-radius: 12px; padding: 30px; }
+            QPushButton:hover { background-color: #1e2130; border: 2px dashed #00e5a0; color: #e4e6ed; }
+        """)
 
-            self.table.setRowCount(0)
-            added_count = 0
-            
-            for day, courses in result_data.items():
-                for item in courses:
-                    self._add_table_row(
-                        day=day, start=item["start"], end=item["end"], 
-                        course=item["course"], ctype=item["ctype"]
-                    )
-                    added_count += 1
+        if not success:
+            QMessageBox.warning(self, "Hata", result_data)
+            self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
+            return
 
-            if added_count == 0:
-                QMessageBox.information(self, "Uyarı", "PDF okundu ancak uygun formatta ders bulunamadı.")
-                self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
-            else:
-                self.editor_wrapper.setVisible(True)
-                self.upload_btn.setText(f"\n✅\n\nBaşarıyla {added_count} Ders Okundu\n(Yeni yüklemek için tıkla)\n")
+        if doc_type == "exam":
+            QMessageBox.warning(self, "Yanlış Menü", "Yüklediğiniz dosya bir 'Sınav Takvimi'.\nLütfen bu dosyayı soldaki 'Notlar' menüsünden yükleyin.")
+            self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
+            return
+
+        self.table.setRowCount(0)
+        added_count = 0
+        
+        for day, courses in result_data.items():
+            for item in courses:
+                self._add_table_row(
+                    day=day, start=item["start"], end=item["end"], 
+                    course=item["course"], ctype=item["ctype"]
+                )
+                added_count += 1
+
+        if added_count == 0:
+            QMessageBox.information(self, "Uyarı", "Belge okundu ancak uygun formatta ders bulunamadı.")
+            self.upload_btn.setText("\n📄\n\nPDF veya Görsel Yükle\n(Mevcut programın üzerine yazar)\n")
+        else:
+            self.editor_wrapper.setVisible(True)
+            self.upload_btn.setText(f"\n✅\n\nBaşarıyla {added_count} Ders Okundu\n(Yeni yüklemek için tıkla)\n")
 
     def _delete_selected_row(self):
         current_row = self.table.currentRow()

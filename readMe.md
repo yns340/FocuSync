@@ -203,13 +203,13 @@ Firestore
 
 ```json
 {
-  "allowed_apps": ["string"]
+  "allowed_apps": ["string"],
   "daily_study_goal": "number",
   "email": "string",
   "name": "string",
   "password": "string",
-  "role": "string"
-  "school": "string"
+  "role": "string",
+  "school": "string",
   "surname": "string"
 }
 ```
@@ -218,22 +218,38 @@ Firestore
 
 ### 📚 Courses
 
-| Alan               | Tip       | Açıklama                                     |
-| ------------------ | --------- | -------------------------------------------- |
-| `course_name`      | string    | Ders adı                                     |
-| `difficulty_level` | number    | Zorluk seviyesi                              |
-| `exam_date`        | timestamp | Sınav tarihi                                 |
-| **`user_id`**      | string    | Kullanıcı referansı                          |
-| `weekly_hours`     | number    | Haftalık ders saati                          |
-| `is_active`        | boolean   | Güncel Programda veya ek var mı geçmişte mi? |
+> **Doküman ID:** `{user_id}_{course_id}` (Composite Key — çakışmaları önler)
+
+| Alan               | Tip     | Açıklama                                           |
+| ------------------ | ------- | -------------------------------------------------- |
+| **`user_id`**      | string  | Kullanıcı referansı                                |
+| **`course_id`**    | string  | Ders referansı                                     |
+| `course_name`      | string  | Ders adı                                           |
+| `difficulty_level` | number  | Zorluk seviyesi (algoritma tarafından güncellenir) |
+| `weekly_hours`     | number  | Haftalık ders saati (okuldaki kredi/sıklık)        |
+| `exam_date`        | string  | Sınav tarihi (Exams ile senkronize)                |
+| `exam_weights`     | object  | Sınav ağırlıkları sözlüğü                          |
+| `exam_grades`      | object  | Sınav notları sözlüğü (Exams ile senkronize)       |
+| `target_grade`     | number  | Hedef not                                          |
+| `is_active`        | boolean | Güncel programda mı, yoksa arşivde mi?             |
 
 ```json
 {
+  "user_id": "string",
+  "course_id": "string",
   "course_name": "string",
   "difficulty_level": "number",
-  "exam_date": "timestamp",
-  "user_id": "string",
-  "weekly_hours": "number", // Örn: 4 (Okuldaki ders sıklığı/kredisi)
+  "weekly_hours": "number",
+  "exam_date": "string",
+  "exam_weights": {
+    "Vize": "number",
+    "Final": "number"
+  },
+  "exam_grades": {
+    "Vize": "string",
+    "Final": "string"
+  },
+  "target_grade": "number",
   "is_active": "boolean"
 }
 ```
@@ -244,9 +260,9 @@ Firestore
 
 | Alan             | Tip       | Açıklama                   |
 | ---------------- | --------- | -------------------------- |
+| **`user_id`**    | string    | Kullanıcı referansı        |
 | `schedule_name`  | string    | Program dönem adı          |
 | `updated_at`     | timestamp | Programın yüklenme tarihi  |
-| **`user_id`**    | string    | Kullanıcı referansı        |
 | `weekly_routine` | object    | Günlere göre ders programı |
 
 #### `weekly_routine[gun][]` — Dizi Elemanı
@@ -254,16 +270,16 @@ Firestore
 | Alan            | Tip    | Açıklama        |
 | --------------- | ------ | --------------- |
 | **`course_id`** | string | Ders referansı  |
-| `course_name`   | string | Ders adı.       |
+| `course_name`   | string | Ders adı        |
 | `start_time`    | string | Başlangıç saati |
 | `end_time`      | string | Bitiş saati     |
 | `type`          | string | Etkinlik türü   |
 
 ```json
 {
+  "user_id": "string",
   "schedule_name": "string",
   "updated_at": "timestamp",
-  "user_id": "string"
   "weekly_routine": {
     "Pazartesi": [
       {
@@ -274,42 +290,10 @@ Firestore
         "type": "string"
       }
     ],
-    "Salı": [
-      {
-        "course_id": "string",
-        "course_name": "string",
-        "start_time": "string",
-        "end_time": "string",
-        "type": "string"
-      }
-    ],
-    "Çarşamba": [
-      {
-        "course_id": "string",
-        "course_name": "string",
-        "start_time": "string",
-        "end_time": "string",
-        "type": "string"
-      }
-    ],
-    "Perşembe": [
-      {
-        "course_id": "string",
-        "course_name": "string",
-        "start_time": "string",
-        "end_time": "string",
-        "type": "string"
-      }
-    ],
-    "Cuma": [
-      {
-        "course_id": "string",
-        "course_name": "string",
-        "start_time": "string",
-        "end_time": "string",
-        "type": "string"
-      }
-    ],
+    "Salı": [],
+    "Çarşamba": [],
+    "Perşembe": [],
+    "Cuma": [],
     "Cumartesi": [],
     "Pazar": []
   }
@@ -322,36 +306,27 @@ Firestore
 
 | Alan              | Tip       | Açıklama                        |
 | ----------------- | --------- | ------------------------------- |
-| `plan_start_date` | timestamp | Planın başlangıç tarihi         |
 | **`user_id`**     | string    | Kullanıcı referansı             |
+| `plan_start_date` | timestamp | Planın başlangıç tarihi         |
 | `weekly_sessions` | object    | Günlere göre çalışma oturumları |
 
 #### `weekly_sessions[gun][]` — Dizi Elemanı
 
-| Alan               | Tip     | Açıklama                       |
-| ------------------ | ------- | ------------------------------ |
-| **`session_id`**   | string  | Oturum ID (örn: `session1`, …) |
-| **`course_id`**    | string  | Ders referansı                 |
-| `course_name`      | string  | Ders adı.                      |
-| `planned_duration` | number  | Planlanan süre (dakika)        |
-| `is_completed`     | boolean | Tamamlandı mı?                 |
+| Alan               | Tip     | Açıklama                                |
+| ------------------ | ------- | --------------------------------------- |
+| **`session_id`**   | string  | Oturum ID (örn: `session1`, `session2`) |
+| **`course_id`**    | string  | Ders referansı                          |
+| `course_name`      | string  | Ders adı                                |
+| `planned_duration` | number  | Planlanan süre (dakika)                 |
+| `is_completed`     | boolean | Tamamlandı mı?                          |
 
 ```json
 {
+  "user_id": "string",
   "plan_start_date": "timestamp",
-  "user_id": "string"
   "weekly_sessions": {
     "Pazartesi": [
       {
-        "session_id": "string", //Firebase dizide id üretmez o yüzden kendimiz session1 olarak başlatırız...
-        "course_id": "string",
-        "course_name": "string",
-        "planned_duration": "number",
-        "is_completed": "boolean"
-      }
-    ],
-    "Salı": [
-      {
         "session_id": "string",
         "course_id": "string",
         "course_name": "string",
@@ -359,51 +334,12 @@ Firestore
         "is_completed": "boolean"
       }
     ],
-    "Çarşamba": [
-      {
-        "session_id": "string",
-        "course_id": "string",
-        "course_name": "string",
-        "planned_duration": "number",
-        "is_completed": "boolean"
-      }
-    ],
-    "Perşembe": [
-      {
-        "session_id": "string",
-        "course_id": "string",
-        "course_name": "string",
-        "planned_duration": "number",
-        "is_completed": "boolean"
-      }
-    ],
-    "Cuma": [
-      {
-        "session_id": "string",
-        "course_id": "string",
-        "course_name": "string",
-        "planned_duration": "number",
-        "is_completed": "boolean"
-      }
-    ],
-    "Cumartesi": [
-      {
-        "session_id": "string",
-        "course_id": "string",
-        "course_name": "string",
-        "planned_duration": "number",
-        "is_completed": "boolean"
-      }
-    ],
-    "Pazar": [
-      {
-        "session_id": "string",
-        "course_id": "string",
-        "course_name": "string",
-        "planned_duration": "number",
-        "is_completed": "boolean"
-      }
-    ]
+    "Salı": [],
+    "Çarşamba": [],
+    "Perşembe": [],
+    "Cuma": [],
+    "Cumartesi": [],
+    "Pazar": []
   }
 }
 ```
@@ -412,27 +348,27 @@ Firestore
 
 ### 🎯 FocusSessions
 
-| Alan                        | Tip       | Açıklama                           |
-| --------------------------- | --------- | ---------------------------------- |
-| **`study_plan_session_id`** | string    | StudyPlan `session_id` referansı   |
-| **`course_id`**             | string    | Ders referansı                     |
-| `actual_focus_time`         | number    | Gerçek odak süresi (dakika)        |
-| `head_tilt_degree `         | number    | Kafa eğimi için tutulan açı değeri |
-| `focus_score`               | number    | Odak skoru                         |
-| `status`                    | string    | Durum                              |
-| `timestamp`                 | timestamp | Oturum zamanı                      |
-| **`user_id`**               | string    | Kullanıcı referansı                |
+| Alan                        | Tip       | Açıklama                         |
+| --------------------------- | --------- | -------------------------------- |
+| **`user_id`**               | string    | Kullanıcı referansı              |
+| **`study_plan_session_id`** | string    | StudyPlan `session_id` referansı |
+| **`course_id`**             | string    | Ders referansı                   |
+| `actual_focus_time`         | number    | Gerçek odak süresi (dakika)      |
+| `head_tilt_degree`          | number    | Kafa eğimi açı değeri            |
+| `focus_score`               | number    | Odak skoru                       |
+| `status`                    | string    | Oturum durumu                    |
+| `timestamp`                 | timestamp | Oturum zamanı                    |
 
 ```json
 {
-  "study_plan_session_id": "string", (weekly_sessions id lerine atanmalı)
+  "user_id": "string",
+  "study_plan_session_id": "string",
   "course_id": "string",
   "actual_focus_time": "number",
   "head_tilt_degree": "number",
   "focus_score": "number",
   "status": "string",
-  "timestamp": "timestamp",
-  "user_id": "string"
+  "timestamp": "timestamp"
 }
 ```
 
@@ -440,21 +376,94 @@ Firestore
 
 ### 🚫 Violations
 
-| Alan                   | Tip       | Açıklama                     |
-| ---------------------- | --------- | ---------------------------- |
-| **`focus_session_id`** | string    | FocusSession referansı       |
-| `app_name`             | string    | İhlal eden uygulama adı      |
-| `duration`             | number    | İhlal süresi (saniye/dakika) |
-| `timestamp`            | timestamp | İhlal zamanı                 |
-| **`user_id`**          | string    | Kullanıcı referansı          |
+| Alan                   | Tip       | Açıklama                |
+| ---------------------- | --------- | ----------------------- |
+| **`user_id`**          | string    | Kullanıcı referansı     |
+| **`focus_session_id`** | string    | FocusSession referansı  |
+| `app_name`             | string    | İhlal eden uygulama adı |
+| `duration`             | number    | İhlal süresi (saniye)   |
+| `timestamp`            | timestamp | İhlal zamanı            |
 
 ```json
 {
+  "user_id": "string",
   "focus_session_id": "string",
   "app_name": "string",
   "duration": "number",
-  "timestamp": "timestamp",
-  "user_id": "string"
+  "timestamp": "timestamp"
+}
+```
+
+---
+
+### 🛡️ WhitelistSessions
+
+| Alan                         | Tip       | Açıklama                            |
+| ---------------------------- | --------- | ----------------------------------- |
+| **`user_id`**                | string    | Kullanıcı referansı                 |
+| `total_duration_seconds`     | number    | Toplam seans süresi (saniye)        |
+| `violation_duration_seconds` | number    | Toplam ihlal süresi (saniye)        |
+| `total_duration_hms`         | string    | Toplam süre (okunabilir, SS:DD:SN)  |
+| `violation_duration_hms`     | string    | İhlal süresi (okunabilir, SS:DD:SN) |
+| `violation_count`            | number    | Toplam ihlal sayısı                 |
+| `violations`                 | object[]  | İhlal detayları listesi             |
+| `session_started_at`         | timestamp | Seans başlangıç zamanı              |
+| `session_ended_at`           | timestamp | Seans bitiş zamanı                  |
+| `saved_at`                   | timestamp | Kaydedilme zamanı                   |
+
+```json
+{
+  "user_id": "string",
+  "total_duration_seconds": "number",
+  "violation_duration_seconds": "number",
+  "total_duration_hms": "string",
+  "violation_duration_hms": "string",
+  "violation_count": "number",
+  "violations": [
+    {
+      "app_name": "string",
+      "duration": "number"
+    }
+  ],
+  "session_started_at": "timestamp",
+  "session_ended_at": "timestamp",
+  "saved_at": "timestamp"
+}
+```
+
+---
+
+### 📝 Exams
+
+| Alan                 | Tip       | Açıklama              |
+| -------------------- | --------- | --------------------- |
+| **`user_id`**        | string    | Kullanıcı referansı   |
+| `exam_schedule_name` | string    | Sınav takvimi adı     |
+| `updated_at`         | timestamp | Son güncelleme zamanı |
+| `exams`              | object[]  | Sınav listesi         |
+
+#### `exams[]` — Dizi Elemanı
+
+| Alan            | Tip    | Açıklama                                         |
+| --------------- | ------ | ------------------------------------------------ |
+| **`course_id`** | string | Ders referansı                                   |
+| `exam_type`     | string | Sınav türü (örn: `Vize`, `Final`)                |
+| `exam_date`     | string | Sınav tarihi                                     |
+| `exam_grade`    | string | Sınav notu (Courses tablosuna senkronize edilir) |
+
+```json
+{
+  "user_id": "string",
+  "exam_schedule_name": "string",
+  "updated_at": "timestamp",
+  "exams": [
+    {
+      "course_id": "string",
+      "exam_type": "string",
+      "exam_date": "string",
+      "exam_grade": "string"
+    }
+  ]
 }
 ```
 
