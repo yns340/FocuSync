@@ -34,6 +34,7 @@ SYSTEM_EXES = {
     "widgets.exe",
     "photos.exe",
     "taskmgr.exe",
+    "snippingtool.exe",
 }
 
 SELF_EXES = {
@@ -293,6 +294,7 @@ class MonitorWorker(QThread):
         self.interval_ms = interval_ms
         self._running = False
         self._last_state = None  # "ok" veya ihlal detay string'i
+        self._last_fg_debug = None
 
     def _emit_ok_if_changed(self):
         if self._last_state != "ok":
@@ -313,9 +315,11 @@ class MonitorWorker(QThread):
             exe_name, window_title = get_active_window_info()
             window_title_lower = window_title.lower().strip() if window_title else ""
 
-            # Geçici debug
-            if exe_name or window_title:
+            current_fg = (exe_name, window_title)
+
+            if (exe_name or window_title) and current_fg != self._last_fg_debug:
                 print(f"[FG DEBUG] exe={exe_name!r} | title={window_title!r}")
+                self._last_fg_debug = current_fg
 
             if not exe_name:
                 self._emit_ok_if_changed()
@@ -351,6 +355,7 @@ class WhitelistLogic:
     def __init__(self, user_id, db_manager):
         self.user_id = user_id
         self.db_manager = db_manager
+        
 
         self._whitelist: set[str] = set()
         self.ihlal: bool = False
