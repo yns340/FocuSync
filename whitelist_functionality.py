@@ -310,38 +310,38 @@ class MonitorWorker(QThread):
         while self._running:
             whitelist = self._get_whitelist()
 
-            if not whitelist:
+            exe_name, window_title = get_active_window_info()
+            window_title_lower = window_title.lower().strip() if window_title else ""
+
+            # Geçici debug
+            if exe_name or window_title:
+                print(f"[FG DEBUG] exe={exe_name!r} | title={window_title!r}")
+
+            if not exe_name:
                 self._emit_ok_if_changed()
+
+            elif exe_name in SYSTEM_EXES:
+                self._emit_ok_if_changed()
+
+            elif exe_name in SELF_EXES:
+                self._emit_ok_if_changed()
+
+            elif exe_name == "python.exe" and "focusync" in window_title_lower:
+                self._emit_ok_if_changed()
+
             else:
-                exe_name, window_title = get_active_window_info()
-                window_title_lower = window_title.lower().strip() if window_title else ""
+                izinli = exe_name in whitelist
 
-                if not exe_name:
+                if izinli:
                     self._emit_ok_if_changed()
-
-                elif exe_name in SYSTEM_EXES:
-                    self._emit_ok_if_changed()
-
-                elif exe_name in SELF_EXES:
-                    self._emit_ok_if_changed()
-
-                elif exe_name == "python.exe" and "focusync" in window_title_lower:
-                    self._emit_ok_if_changed()
-
                 else:
-                    izinli = exe_name in whitelist
-
-                    if izinli:
-                        self._emit_ok_if_changed()
-                    else:
-                        detay = f"{exe_name} | {window_title}" if window_title else exe_name
-                        self._emit_violation_if_changed(detay)
+                    detay = f"{exe_name} | {window_title}" if window_title else exe_name
+                    self._emit_violation_if_changed(detay)
 
             elapsed = 0
             while self._running and elapsed < self.interval_ms:
                 self.msleep(200)
                 elapsed += 200
-
     def stop(self):
         self._running = False
         self.wait()
