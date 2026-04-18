@@ -267,18 +267,12 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Plan oluşturma hatası: {str(e)}"
 
-    def add_focus_session(self, user_id, study_plan_session_id, course_id, actual_focus_time, head_tilt_degree, focus_score, status):
+    def add_focus_session(self, user_id, study_plan_session_id, course_id, actual_focus_time,head_tilt_degree, focus_score, status):
         """
-        FocusSessions: Yeni bir odaklanma raporunu benzersiz bir ID ile kaydeder.
+        FocusSessions: Akif'in kamera sisteminden gelen GERÇEKLEŞEN odaklanma raporunu kaydeder.
         """
         try:
-            # Önce boş bir doküman referansı oluşturup benzersiz ID'yi alıyoruz
-            doc_ref = self.db.collection("FocusSessions").document()
-            session_id = doc_ref.id
-            
-            # Veriyi bu ID ile birlikte kaydediyoruz
-            doc_ref.set({
-                "focus_session_id": session_id, # Yeni eklenen alan
+            self.db.collection("FocusSessions").add({
                 "user_id": user_id,
                 "study_plan_session_id": study_plan_session_id, 
                 "course_id": course_id,
