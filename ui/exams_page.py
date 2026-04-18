@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QStackedWidget, QCheckBox, QSpinBox, QDateEdit
 )
 from PyQt6.QtCore import Qt, QTime, QDate, pyqtSignal, QThread
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIntValidator
 
 # --- ARKA PLAN OCR İŞÇİSİ ---
 class OCRWorker(QThread):
@@ -529,6 +529,16 @@ class ExamsPage(QWidget):
         grade_edit = QLineEdit(grade)
         grade_edit.setPlaceholderText("Not")
         grade_edit.setStyleSheet("QLineEdit { text-align: center; }")
+
+        grade_edit.setValidator(QIntValidator(0, 100))
+
+        # 2. Aşama: 100'den büyük sayı yazılırsa anında 100'e sabitler
+        def cap_grade(text, edit=grade_edit):
+            if text.isdigit() and int(text) > 100:
+                edit.setText("100")
+                
+        grade_edit.textChanged.connect(cap_grade)
+
         self.table.setCellWidget(r, 6, grade_edit)
 
     def _import_file(self):
