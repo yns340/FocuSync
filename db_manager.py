@@ -310,15 +310,22 @@ class DatabaseManager:
         total_duration_hms: str,
         violation_duration_hms: str,
         session_started_at=None,
-        session_ended_at=None
+        session_ended_at=None,
+        session_platform: str | None = None,
+        session_id_type: str | None = None
     ):
         """
         WhitelistSessions:
         Bir whitelist izleme seansının tüm verisini tek dökümanda kaydeder.
+        violations içindeki kayıtlar platform bağımsız normalized app identity içermelidir.
         """
         try:
             self.db.collection("WhitelistSessions").add({
                 "user_id": user_id,
+
+                # seans meta
+                "session_platform": session_platform,   # windows / macos / linux
+                "session_id_type": session_id_type,     # exe / bundle_id / process_name / desktop_id
 
                 # ham saniye
                 "total_duration_seconds": int(total_duration),
@@ -338,7 +345,6 @@ class DatabaseManager:
             return True, "Whitelist seansı kaydedildi."
         except Exception as e:
             return False, f"Whitelist seans kayıt hatası: {str(e)}"
-
     # ==========================================
     # GET (OKUMA) FONKSİYONLARI
     # ==========================================

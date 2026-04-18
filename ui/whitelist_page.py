@@ -4,7 +4,7 @@ import sys
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QListWidget, QMessageBox,
-    QFrame, QCheckBox, QApplication, QFileDialog,
+    QFrame, QApplication, QFileDialog,
     QDialog, QListWidgetItem, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt
@@ -18,8 +18,13 @@ except ImportError:
     class DummySound:
         def Beep(self, freq, duration): pass
         def PlaySound(self, sound, flags): pass
+        def MessageBeep(self, kind=0): pass
+
         SND_ALIAS = 0
         SND_ASYNC = 0
+        SND_FILENAME = 0
+        SND_NODEFAULT = 0
+        MB_ICONEXCLAMATION = 0
     winsound = DummySound()
 
 try:
@@ -28,6 +33,10 @@ try:
         iter_installed_apps,
         MonitorWorker,
         WhitelistLogic,
+        get_runtime_platform,
+        get_default_id_type,
+        format_identity_for_ui,
+        monitoring_supported,
     )
 except ImportError:
     CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,6 +49,10 @@ except ImportError:
         iter_installed_apps,
         MonitorWorker,
         WhitelistLogic,
+        get_runtime_platform,
+        get_default_id_type,
+        format_identity_for_ui,
+        monitoring_supported,
     )
 
 
@@ -263,8 +276,14 @@ class WhitelistPage(QWidget):
             app.aboutToQuit.connect(self._cleanup)
 
         print("[WhitelistPage] Yüklendi.")
-        if not WIN32_AVAILABLE:
-            print("[WhitelistPage] pywin32 / psutil eksik, izleme çalışmayacak.")
+
+        platform_name = get_runtime_platform()
+        if platform_name == "windows" and not WIN32_AVAILABLE:
+            print("[WhitelistPage] Windows aktif pencere izlemesi için pywin32 / psutil eksik.")
+        elif platform_name == "macos" and not monitoring_supported():
+            print("[WhitelistPage] macOS aktif uygulama izlemesi için AppKit / NSWorkspace hazır değil.")
+        elif platform_name == "linux":
+            print("[WhitelistPage] Linux foreground app detection henüz uygulanmadı.")
 
     def _ensure_alert_dialog(self):
         if self._alert_dialog is None:
@@ -283,11 +302,11 @@ class WhitelistPage(QWidget):
             print(f"[Whitelist] Uyarı sesi çalınamadı: {e}")
 
     def start_monitoring(self):
-        if not WIN32_AVAILABLE:
+        if not monitoring_supported():
             QMessageBox.warning(
                 self,
-                "Eksik Paket",
-                "Aktif pencere izlemesi için 'pywin32' ve 'psutil' gerekli."
+                "Desteklenmiyor",
+                "Bu platform için aktif uygulama izleme henüz hazır değil."
             )
             return False
 
@@ -306,7 +325,7 @@ class WhitelistPage(QWidget):
         self._render_neutral_state()
         self._update_allow_last_controls()
 
-        print("[Whitelist] İzleme başlatıldı (1 sn aralıklı, exe modu).")
+        print("[Whitelist] İzleme başlatıldı (1 sn aralıklı, uygulama modu).")
         return True
 
 
@@ -345,7 +364,7 @@ class WhitelistPage(QWidget):
         root.addWidget(title)
 
         desc = QLabel(
-            "Listeye eklediğin .exe adları dışındaki aktif kullanıcı uygulamaları ihlal sayılır.\n"
+            "Listeye eklediğin uygulama adları dışındaki aktif kullanıcı uygulamaları ihlal sayılır.\n"
             "Sistem uygulamaları otomatik olarak izinli kabul edilir.\n"
             "Uygulama eklemek için kurulu uygulama listesi, dosya seçimi veya son ihlale hızlı izin verme kullanılabilir."
         )
@@ -355,21 +374,22 @@ class WhitelistPage(QWidget):
 
         action_row = QHBoxLayout()
 
-        self._installed_apps_btn = QPushButton("Kurulu Uygulamalardan Ekle")
-        self._installed_apps_btn.setFixedHeight(36)
-        self._installed_apps_btn.clicked.connect(self._kurulu_uygulamalardan_ekle)
-        action_row.addWidget(self._installed_apps_btn)
+        if get_runtime_platform() == "windows":
+            self._installed_apps_btn = QPushButton("Kurulu Uygulamalardan Ekle")
+            self._installed_apps_btn.setFixedHeight(36)
+            self._installed_apps_btn.clicked.connect(self._kurulu_uygulamalardan_ekle)
+            action_row.addWidget(self._installed_apps_btn)
 
-        self._browse_exe_btn = QPushButton("Dosyadan .exe Seç")
-        self._browse_exe_btn.setFixedHeight(36)
-        self._browse_exe_btn.clicked.connect(self._dosyadan_exe_sec)
-        action_row.addWidget(self._browse_exe_btn)
+            self._browse_exe_btn = QPushButton("Dosyadan Uygulama Seç")
+            self._browse_exe_btn.setFixedHeight(36)
+            self._browse_exe_btn.clicked.connect(self._dosyadan_exe_sec)
+            action_row.addWidget(self._browse_exe_btn)
 
         root.addLayout(action_row)
 
         add_row = QHBoxLayout()
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Manuel exe adı gir (örn: chrome.exe)")
+        self._input.setPlaceholderText("Manuel uygulama adı gir (örn: chrome.exe, com.google.Chrome)")
         self._input.setFixedHeight(36)
         self._input.returnPressed.connect(self._ekle)
 
@@ -481,8 +501,11 @@ class WhitelistPage(QWidget):
 
     def _listeyi_yenile(self):
         self._list_widget.clear()
-        for app in self.logic.whitelist_items():
-            self._list_widget.addItem(app)
+        for item in self.logic._whitelist:
+            ui_text = format_identity_for_ui(item)
+            lw_item = QListWidgetItem(ui_text)
+            lw_item.setData(Qt.ItemDataRole.UserRole, item)
+            self._list_widget.addItem(lw_item)
 
     def _update_allow_last_controls(self):
         aktif = self.logic.has_last_violation()
@@ -518,7 +541,14 @@ class WhitelistPage(QWidget):
         self._detay_lbl.setText("Tespit edilen uygulama: —")
 
     def _ekle(self):
-        result = self.logic.add_exe_to_whitelist(self._input.text().strip().lower())
+        raw = self._input.text().strip()
+
+        result = self.logic.add_app_to_whitelist(
+            app_id=raw,
+            platform_name=get_runtime_platform(),
+            id_type=get_default_id_type(),
+            app_display_name=raw
+        )
 
         if not result["ok"]:
             self._show_message(result["level"], result["msg"])
@@ -532,18 +562,20 @@ class WhitelistPage(QWidget):
             self._close_alert_popup()
             self._render_no_violation_state(result["clear_info"]["last_violation"])
 
-        print(f"[Whitelist] Eklendi: {result['exe_name']}")
-
+        print(f"[Whitelist] Eklendi: {result['app_id']}")
+    
     def _sil(self):
         item = self._list_widget.currentItem()
         if not item:
             QMessageBox.warning(self, "Uyarı", "Lütfen listeden bir giriş seç.")
             return
 
-        ok, exe_name = self.logic.remove_exe_from_whitelist(item.text().strip().lower())
+        app_item = item.data(Qt.ItemDataRole.UserRole)
+        ok = self.logic.remove_app_from_whitelist(app_item)
+
         if ok:
             self._listeyi_yenile()
-            print(f"[Whitelist] Silindi: {exe_name}")
+            print(f"[Whitelist] Silindi: {app_item.get('app_id')}")
 
     def _kurulu_uygulamalardan_ekle(self):
         if os.name != "nt":
@@ -561,7 +593,7 @@ class WhitelistPage(QWidget):
                 self,
                 "Bilgi",
                 "Kurulu uygulama listesi alınamadı veya uygun exe bulunamadı.\n"
-                "İstersen 'Dosyadan .exe Seç' seçeneğini kullanabilirsin."
+                "İstersen 'Dosyadan Uygulama Seç' seçeneğini kullanabilirsin."
             )
             return
 
@@ -571,7 +603,12 @@ class WhitelistPage(QWidget):
             if not selected:
                 return
 
-            result = self.logic.add_exe_to_whitelist(selected.get("exe_name", "").strip().lower())
+            result = self.logic.add_app_to_whitelist(
+                app_id=selected.get("exe_name", "").strip().lower(),
+                platform_name="windows",
+                id_type="exe",
+                app_display_name=selected.get("display_name", "").strip() or selected.get("exe_name", "").strip().lower()
+            )
             if not result["ok"]:
                 self._show_message(result["level"], result["msg"])
                 return
@@ -583,7 +620,7 @@ class WhitelistPage(QWidget):
                 self._close_alert_popup()
                 self._render_no_violation_state(result["clear_info"]["last_violation"])
 
-            print(f"[Whitelist] Eklendi: {result['exe_name']}")
+            print(f"[Whitelist] Eklendi: {result['app_id']}")
 
     def _dosyadan_exe_sec(self):
         default_dir = os.environ.get("ProgramFiles", os.path.expanduser("~"))
@@ -598,7 +635,12 @@ class WhitelistPage(QWidget):
         if not file_path:
             return
 
-        result = self.logic.add_exe_to_whitelist(os.path.basename(file_path).lower().strip())
+        result = self.logic.add_app_to_whitelist(
+            app_id=os.path.basename(file_path).lower().strip(),
+            platform_name="windows",
+            id_type="exe",
+            app_display_name=os.path.basename(file_path).lower().strip()
+        )
         if not result["ok"]:
             self._show_message(result["level"], result["msg"])
             return
@@ -610,7 +652,7 @@ class WhitelistPage(QWidget):
             self._close_alert_popup()
             self._render_no_violation_state(result["clear_info"]["last_violation"])
 
-        print(f"[Whitelist] Eklendi: {result['exe_name']}")
+        print(f"[Whitelist] Eklendi: {result['app_id']}")
 
     def _son_ihlale_izin_ver(self):
         result = self.logic.allow_last_violation()
@@ -627,12 +669,14 @@ class WhitelistPage(QWidget):
             self._close_alert_popup()
             self._render_no_violation_state(result["clear_info"]["last_violation"])
 
-        print(f"[Whitelist] Son ihlale hızlı izin verildi: {result['exe_name']}")
+        print(f"[Whitelist] Son ihlale hızlı izin verildi: {result['app_id']}")
 
     
 
-    def _ihlal_isle(self, detay: str):
-        result = self.logic.process_violation(detay)
+    def _ihlal_isle(self, violation_payload: dict):
+        result = self.logic.process_violation(violation_payload)
+        detay = violation_payload.get("detail_text", "")
+
         self._update_allow_last_controls()
         self._render_violation_state(detay, result["started_new"])
         self._show_alert_popup(detay, play_sound=result["started_new"])
