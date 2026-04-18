@@ -115,11 +115,13 @@ class NotificationBanner(QFrame):
 class FocusPage(QWidget):
     violation_signal = pyqtSignal(str)
 
-    def __init__(self, user_id: int, db_manager, parent=None):
+    def __init__(self, user_id: int, db_manager, whitelist_page=None, parent=None):
+        
         super().__init__(parent)
         self.user_id = str(user_id) # Garanti string yapalım
         self.db_manager = db_manager
-        
+        self.whitelist_page = whitelist_page
+        #self._bypass_camera_for_test = True
         self._session_active = False
         self._elapsed = 0
         
@@ -277,6 +279,26 @@ class FocusPage(QWidget):
         self._elapsed = 0
         self.is_user_focused = True
 
+        if self.whitelist_page:
+            ok = self.whitelist_page.start_monitoring()
+            if not ok:
+                QMessageBox.warning(self, "Uyarı", "Whitelist izleme başlatılamadı.")
+                self._session_active = False
+                return
+        """
+        if self._bypass_camera_for_test:
+            self.cam_status_lbl.setText("⬤  Test Modu")
+            self.cam_status_lbl.setStyleSheet("color:#f59e0b;font-size:11px;background:transparent;border:none;")
+            self.cam_placeholder.setText("📷\nKamera BYPASS test modu")
+            self.focus_ring.set_value(100, "#00e5a0")
+            self._timer.start(1000)
+            self.start_btn.setText("⏹  Seansı Bitir")
+            self.start_btn.setObjectName("danger_btn")
+            self.start_btn.style().unpolish(self.start_btn)
+            self.start_btn.style().polish(self.start_btn)
+            self.notif.show_warning("🧪", "Test modu: Kamera bypass edildi, whitelist izleme aktif.", "#f59e0b", 4000)
+            return
+        """
         self.tracker = HeadTracker()
         self.tracker.focus_status_changed.connect(self._on_focus_changed)
         self.tracker.face_missing.connect(self._on_face_missing)
@@ -381,6 +403,8 @@ class FocusPage(QWidget):
             self._hide_distraction_popup()
 
     def _on_error(self, msg):
+        if self.whitelist_page:
+            self.whitelist_page.stop_monitoring()
         QMessageBox.critical(self, "Kamera Hatası", f"Beklenmeyen bir donanım hatası oluştu:\n{msg}")
         self._end_session()
 

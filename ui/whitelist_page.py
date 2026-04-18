@@ -282,6 +282,45 @@ class WhitelistPage(QWidget):
         except Exception as e:
             print(f"[Whitelist] Uyarı sesi çalınamadı: {e}")
 
+    def start_monitoring(self):
+        if not WIN32_AVAILABLE:
+            QMessageBox.warning(
+                self,
+                "Eksik Paket",
+                "Aktif pencere izlemesi için 'pywin32' ve 'psutil' gerekli."
+            )
+            return False
+
+        if self._worker and self._worker.isRunning():
+            return True
+
+        self.logic.start_monitoring()
+
+        self._worker = MonitorWorker(self.logic.get_whitelist, 1_000, self)
+        self._worker.violation_found.connect(self._ihlal_isle)
+        self._worker.no_violation.connect(self._ihlal_yok)
+        self._worker.start()
+
+        self._aktif_lbl.setText("İzleme: Açık")
+        self._aktif_lbl.setStyleSheet("color:#00e5a0; font-size:11px;")
+        self._render_neutral_state()
+        self._update_allow_last_controls()
+
+        print("[Whitelist] İzleme başlatıldı (1 sn aralıklı, exe modu).")
+        return True
+
+
+    def stop_monitoring(self):
+        if self._worker:
+            self._worker.stop()
+            self._worker = None
+
+        self._monitoring_bitisini_isle()
+
+        self._aktif_lbl.setText("İzleme: Kapalı")
+        self._aktif_lbl.setStyleSheet("color:#6b7280; font-size:11px;")
+        print("[Whitelist] İzleme durduruldu.")
+
     def _show_alert_popup(self, detay: str, play_sound: bool = False):
         self._ensure_alert_dialog()
         self._alert_dialog.set_violation_text(detay)
@@ -402,11 +441,7 @@ class WhitelistPage(QWidget):
         sep.setStyleSheet("color:#1e2130;")
         root.addWidget(sep)
 
-        self._izleme_cb = QCheckBox("Aktif uygulama izlemesini başlat (10 sn aralıklı)")
-        self._izleme_cb.setStyleSheet("font-size:13px;")
-        self._izleme_cb.stateChanged.connect(self._izleme_toggle)
-        root.addWidget(self._izleme_cb)
-
+        
         durum_frame = QFrame()
         durum_frame.setStyleSheet(
             "background:#111318; border:1px solid #1e2130; border-radius:10px;"
@@ -594,44 +629,7 @@ class WhitelistPage(QWidget):
 
         print(f"[Whitelist] Son ihlale hızlı izin verildi: {result['exe_name']}")
 
-    def _izleme_toggle(self, state):
-        if state == Qt.CheckState.Checked.value:
-            if not WIN32_AVAILABLE:
-                QMessageBox.warning(
-                    self,
-                    "Eksik Paket",
-                    "Aktif pencere izlemesi için 'pywin32' ve 'psutil' gerekli."
-                )
-                self._izleme_cb.setChecked(False)
-                return
-
-            if self._worker and self._worker.isRunning():
-                return
-
-            self.logic.start_monitoring()
-
-            self._worker = MonitorWorker(self.logic.get_whitelist, 10_000, self)
-            self._worker.violation_found.connect(self._ihlal_isle)
-            self._worker.no_violation.connect(self._ihlal_yok)
-            self._worker.start()
-
-            self._aktif_lbl.setText("İzleme: Açık")
-            self._aktif_lbl.setStyleSheet("color:#00e5a0; font-size:11px;")
-            self._render_neutral_state()
-            self._update_allow_last_controls()
-
-            print("[Whitelist] İzleme başlatıldı (10 sn aralıklı, exe modu).")
-
-        else:
-            if self._worker:
-                self._worker.stop()
-                self._worker = None
-
-            self._monitoring_bitisini_isle()
-
-            self._aktif_lbl.setText("İzleme: Kapalı")
-            self._aktif_lbl.setStyleSheet("color:#6b7280; font-size:11px;")
-            print("[Whitelist] İzleme durduruldu.")
+    
 
     def _ihlal_isle(self, detay: str):
         result = self.logic.process_violation(detay)
