@@ -121,7 +121,7 @@ class FocusPage(QWidget):
         self.user_id = str(user_id) # Garanti string yapalım
         self.db_manager = db_manager
         self.whitelist_page = whitelist_page
-        #@self._bypass_camera_for_test = True
+        #self._bypass_camera_for_test = True
         self._session_active = False
         self._elapsed = 0
         

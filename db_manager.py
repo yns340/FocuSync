@@ -291,7 +291,7 @@ class DatabaseManager:
                 doc_ref = self.db.collection("FocusSessions").document(focus_session_id)
 
             doc_ref.set({
-                "focus_session_id": focus_session_id,
+                
                 "user_id": user_id,
                 "study_plan_session_id": study_plan_session_id,
                 "course_id": course_id,
