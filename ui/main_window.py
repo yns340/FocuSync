@@ -118,8 +118,12 @@ class MainWindow(QMainWindow):
         self.exams_page          = ExamsPage(self.user_id, self.db_manager) # YENİ EKLENDİ
         self.suggested_plan_page = SuggestedPlanPage(self.user_id, self.db_manager)
         self.courses_page        = CoursesPage(self.user_id, self.db_manager)
-        self.focus_page          = FocusPage(self.user_id, self.db_manager)
-        self.whitelist_page      = WhitelistPage(self.user_id, self.db_manager)
+        self.whitelist_page = WhitelistPage(self.user_id, self.db_manager)
+        self.focus_page = FocusPage(
+            self.user_id,
+            self.db_manager,
+            whitelist_page=self.whitelist_page
+        )
         self.profile_page        = ProfilePage(self.user_id, self.db_manager) 
 
         # Sıralama güncellendi
