@@ -251,15 +251,16 @@ class FocusPage(QWidget):
         return l
 
     def _load_courses(self):
-        """Veritabanından kullanıcının derslerini çeker ve ComboBox'a ekler"""
-        self.course_combo.clear() # 🔥 YENİ: Listeyi yeniden doldurmadan önce eskilere bir temizlik çek!
-        
+        """Veritabanından dersleri 'Ders Kodu - Ders Adı' formatında çeker."""
+        self.course_combo.clear()
         try:
             success, courses = self.db_manager.get_courses(self.user_id)
             if success and courses:
                 for c in courses:
                     if c.get("is_active", True):
-                        self.course_combo.addItem(c.get("course_name", "İsimsiz Ders"), c.get("course_id"))
+                        # Ders kodu (ID) ve ismini birleştiriyoruz
+                        display_text = f"{c.get('course_id', '')} - {c.get('course_name', 'İsimsiz Ders')}"
+                        self.course_combo.addItem(display_text, c.get("course_id"))
             
             if self.course_combo.count() == 0:
                 self.course_combo.addItem("Genel Çalışma", "genel_calisma")
