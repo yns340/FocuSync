@@ -332,7 +332,8 @@ class FocusPage(QWidget):
         
         if self.tracker:
             self.tracker.stop()
-
+        if self.whitelist_page:
+            self.whitelist_page.stop_monitoring()
         # Açık kalmış olabilecek uyarı pop-up'ını kapat
         self._hide_distraction_popup()
 
