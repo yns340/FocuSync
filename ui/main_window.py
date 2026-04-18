@@ -27,7 +27,7 @@ class MainWindow(QMainWindow):
         self.user_id = user_id
         self.db_manager = db_manager
         self.setWindowTitle(f"FocuSync — Profil: {self.user_id}")
-        self.setMinimumSize(1200, 760)
+        self.setMinimumSize(1480, 860)
         self.resize(1400, 860)
         self._nav_buttons: dict[str, QPushButton] = {}
         self._build_ui()
