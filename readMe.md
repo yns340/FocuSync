@@ -187,52 +187,50 @@ Firestore
 ---
 
 ## 📦 Koleksiyonlar
-
+ 
 ### 👤 Users
-
-| Alan               | Tip      | Açıklama                        |
-| ------------------ | -------- | ------------------------------- |
-| `allowed_apps`     | string[] | Kullanıcının whitelist izinleri |
-| `daily_study_goal` | number   | Kullanıcı çalışma süresi hedefi |
-| `email`            | string   | Kullanıcı email                 |
-| `name`             | string   | Kullanıcı isim                  |
-| `password`         | string   | Şifre                           |
-| `role`             | string   | Kullanıcı rolü                  |
-| `school`           | string   | Kullanıcı okul                  |
-| `surname`          | string   | Kullanıcı soyad                 |
-
+ 
+| Alan               | Tip      | Açıklama                                        |
+| ------------------ | -------- | ----------------------------------------------- |
+| `email`            | string   | Kullanıcı e-posta adresi                        |
+| `password`         | string   | Kullanıcı şifresi                               |
+| `role`             | string   | Kullanıcı rolü (`"User"` varsayılan)            |
+| `name`             | string   | Kullanıcı adı                                   |
+| `surname`          | string   | Kullanıcı soyadı                                |
+| `school`           | string   | Kullanıcının okulu                              |
+| `daily_study_goal` | number   | Algoritma için günlük çalışma hedefi (dakika)   |
+ 
 ```json
 {
-  "allowed_apps": ["string"],
-  "daily_study_goal": "number",
   "email": "string",
-  "name": "string",
   "password": "string",
   "role": "string",
+  "name": "string",
+  "surname": "string",
   "school": "string",
-  "surname": "string"
+  "daily_study_goal": "number"
 }
 ```
-
+ 
 ---
-
+ 
 ### 📚 Courses
-
-> **Doküman ID:** `{user_id}_{course_id}` (Composite Key — çakışmaları önler)
-
-| Alan               | Tip     | Açıklama                                           |
-| ------------------ | ------- | -------------------------------------------------- |
-| **`user_id`**      | string  | Kullanıcı referansı                                |
-| **`course_id`**    | string  | Ders referansı                                     |
-| `course_name`      | string  | Ders adı                                           |
-| `difficulty_level` | number  | Zorluk seviyesi (algoritma tarafından güncellenir) |
-| `weekly_hours`     | number  | Haftalık ders saati (okuldaki kredi/sıklık)        |
-| `exam_date`        | string  | Sınav tarihi (Exams ile senkronize)                |
-| `exam_weights`     | object  | Sınav ağırlıkları sözlüğü                          |
-| `exam_grades`      | object  | Sınav notları sözlüğü (Exams ile senkronize)       |
-| `target_grade`     | number  | Hedef not                                          |
-| `is_active`        | boolean | Güncel programda mı, yoksa arşivde mi?             |
-
+ 
+> **Doküman ID:** `{user_id}_{course_id}` — Composite Key (kullanıcılar arası çakışmaları önler)
+ 
+| Alan               | Tip     | Açıklama                                                  |
+| ------------------ | ------- | --------------------------------------------------------- |
+| **`user_id`**          | string  | Kullanıcı referansı                                       |
+| **`course_id`**        | string  | Ders referansı                                            |
+| `course_name`      | string  | Ders adı (Schedules ile CASCADE güncellenir)              |
+| `difficulty_level` | number  | Zorluk seviyesi — algoritma tarafından güncellenir        |
+| `weekly_hours`     | number  | Haftalık ders saati                                       |
+| `exam_date`        | string  | Sınav tarihi (Exams koleksiyonuyla senkronize)            |
+| `exam_weights`     | object  | Sınav ağırlıkları sözlüğü (`Vize`, `Final` vb.)          |
+| `exam_grades`      | object  | Sınav notları sözlüğü (Exams koleksiyonuyla senkronize)   |
+| `target_grade`     | number  | Hedef not                                                 |
+| `is_active`        | boolean | `true` → güncel programda, `false` → arşivde (soft delete) |
+ 
 ```json
 {
   "user_id": "string",
@@ -253,28 +251,28 @@ Firestore
   "is_active": "boolean"
 }
 ```
-
+ 
 ---
-
+ 
 ### 📅 Schedules
-
-| Alan             | Tip       | Açıklama                   |
-| ---------------- | --------- | -------------------------- |
-| **`user_id`**    | string    | Kullanıcı referansı        |
-| `schedule_name`  | string    | Program dönem adı          |
-| `updated_at`     | timestamp | Programın yüklenme tarihi  |
-| `weekly_routine` | object    | Günlere göre ders programı |
-
-#### `weekly_routine[gun][]` — Dizi Elemanı
-
-| Alan            | Tip    | Açıklama        |
-| --------------- | ------ | --------------- |
-| **`course_id`** | string | Ders referansı  |
-| `course_name`   | string | Ders adı        |
-| `start_time`    | string | Başlangıç saati |
-| `end_time`      | string | Bitiş saati     |
-| `type`          | string | Etkinlik türü   |
-
+ 
+| Alan             | Tip       | Açıklama                                       |
+| ---------------- | --------- | ---------------------------------------------- |
+| **`user_id`**        | string    | Kullanıcı referansı                            |
+| `schedule_name`  | string    | Program dönem adı                              |
+| `updated_at`     | timestamp | `SERVER_TIMESTAMP` — programın yüklenme tarihi |
+| `weekly_routine` | object    | Günlere göre ders listesi                      |
+ 
+#### `weekly_routine[gün][]` — Dizi Elemanı
+ 
+| Alan          | Tip    | Açıklama                       |
+| ------------- | ------ | ------------------------------ |
+| **`course_id`**   | string | Ders referansı                 |
+| `course_name` | string | Ders adı                       |
+| `start_time`  | string | Başlangıç saati (ör: `"09:00"`) |
+| `end_time`    | string | Bitiş saati (ör: `"10:00"`)    |
+| `type`        | string | Etkinlik türü                  |
+ 
 ```json
 {
   "user_id": "string",
@@ -299,27 +297,29 @@ Firestore
   }
 }
 ```
-
+ 
+> **Not:** `save_full_schedule` çağrıldığında mevcut program silinir ve Courses tablosu upsert + soft delete mantığıyla güncellenir.
+ 
 ---
-
+ 
 ### 🧠 StudyPlans
-
-| Alan              | Tip       | Açıklama                        |
-| ----------------- | --------- | ------------------------------- |
-| **`user_id`**     | string    | Kullanıcı referansı             |
-| `plan_start_date` | timestamp | Planın başlangıç tarihi         |
-| `weekly_sessions` | object    | Günlere göre çalışma oturumları |
-
-#### `weekly_sessions[gun][]` — Dizi Elemanı
-
-| Alan               | Tip     | Açıklama                                |
-| ------------------ | ------- | --------------------------------------- |
-| **`session_id`**   | string  | Oturum ID (örn: `session1`, `session2`) |
-| **`course_id`**    | string  | Ders referansı                          |
-| `course_name`      | string  | Ders adı                                |
-| `planned_duration` | number  | Planlanan süre (dakika)                 |
-| `is_completed`     | boolean | Tamamlandı mı?                          |
-
+ 
+| Alan              | Tip       | Açıklama                              |
+| ----------------- | --------- | ------------------------------------- |
+| **`user_id`**        | string    | Kullanıcı referansı                   |
+| `plan_start_date` | timestamp | Planın başlangıç tarihi               |
+| `weekly_sessions` | object    | Günlere göre çalışma oturumları       |
+ 
+#### `weekly_sessions[gün][]` — Dizi Elemanı
+ 
+| Alan               | Tip     | Açıklama                                    |
+| ------------------ | ------- | ------------------------------------------- |
+| **`session_id`**       | string  | Oturum kimliği (ör: `"session1"`)           |
+| **`course_id`**        | string  | Ders referansı                              |
+| `course_name`      | string  | Ders adı                                    |
+| `planned_duration` | number  | Planlanan süre (dakika)                     |
+| `is_completed`     | boolean | `mark_session_completed` ile güncellenir    |
+ 
 ```json
 {
   "user_id": "string",
@@ -343,22 +343,22 @@ Firestore
   }
 }
 ```
-
+ 
 ---
-
+ 
 ### 🎯 FocusSessions
-
-| Alan                        | Tip       | Açıklama                         |
-| --------------------------- | --------- | -------------------------------- |
-| **`user_id`**               | string    | Kullanıcı referansı              |
-| **`study_plan_session_id`** | string    | StudyPlan `session_id` referansı |
-| **`course_id`**             | string    | Ders referansı                   |
-| `actual_focus_time`         | number    | Gerçek odak süresi (dakika)      |
-| `head_tilt_degree`          | number    | Kafa eğimi açı değeri            |
-| `focus_score`               | number    | Odak skoru                       |
-| `status`                    | string    | Oturum durumu                    |
-| `timestamp`                 | timestamp | Oturum zamanı                    |
-
+ 
+| Alan                    | Tip       | Açıklama                                              |
+| ----------------------- | --------- | ----------------------------------------------------- |
+| **`user_id`**               | string    | Kullanıcı referansı                                   |
+| **`study_plan_session_id`** | string    | StudyPlans koleksiyonundaki `session_id` referansı    |
+| **`course_id`**             | string    | Ders referansı                                        |
+| `actual_focus_time`     | number    | Gerçekleşen odak süresi (dakika, `int`)               |
+| `head_tilt_degree`      | number    | Kamera modülünden gelen kafa eğimi açısı (`float`)    |
+| `focus_score`           | number    | Odak skoru (`float`)                                  |
+| `status`                | string    | Oturum durumu (ör: `"Completed"`)                     |
+| `timestamp`             | timestamp | `SERVER_TIMESTAMP` — oturum bitiş zamanı              |
+ 
 ```json
 {
   "user_id": "string",
@@ -371,49 +371,39 @@ Firestore
   "timestamp": "timestamp"
 }
 ```
-
+ 
 ---
-
-### 🚫 Violations
-
-| Alan                   | Tip       | Açıklama                |
-| ---------------------- | --------- | ----------------------- |
-| **`user_id`**          | string    | Kullanıcı referansı     |
-| **`focus_session_id`** | string    | FocusSession referansı  |
-| `app_name`             | string    | İhlal eden uygulama adı |
-| `duration`             | number    | İhlal süresi (saniye)   |
-| `timestamp`            | timestamp | İhlal zamanı            |
-
+ 
+### 🛡️ WhitelistSessions
+ 
+| Alan                         | Tip       | Açıklama                                          |
+| ---------------------------- | --------- | ------------------------------------------------- |
+| **`user_id`**                    | string    | Kullanıcı referansı                               |
+| **`focus_session_id`**           | string    | İlişkili FocusSessions doküman ID'si              |
+| `total_duration_seconds`     | number    | Toplam seans süresi (saniye, `int`)               |
+| `violation_duration_seconds` | number    | Toplam ihlal süresi (saniye, `int`)               |
+| `total_duration_hms`         | string    | Toplam süre — okunabilir (`SS:DD:SN`)             |
+| `violation_duration_hms`     | string    | İhlal süresi — okunabilir (`SS:DD:SN`)            |
+| `violation_count`            | number    | `len(violations)` ile otomatik hesaplanır         |
+| `violations`                 | object[]  | İhlal detayları listesi                           |
+| `session_started_at`         | timestamp | Seans başlangıç zamanı                            |
+| `session_ended_at`           | timestamp | Seans bitiş zamanı                                |
+| `saved_at`                   | timestamp | `SERVER_TIMESTAMP` — kaydedilme zamanı            |
+ 
+#### `violations[]` — Dizi Elemanı
+ 
+| Alan               | Tip       | Açıklama                                        |
+| ------------------ | --------- | ----------------------------------------------- |
+| `app_name`         | string    | İhlal eden uygulamanın adı (ör: `"chrome.exe"`) |
+| `duration_seconds` | number    | İhlal süresi (saniye)                           |
+| `duration_hms`     | string    | İhlal süresi — okunabilir (`SS:DD:SN`)          |
+| `started_at`       | timestamp | İhlalin başlangıç zamanı                        |
+| `ended_at`         | timestamp | İhlalin bitiş zamanı                            |
+ 
 ```json
 {
   "user_id": "string",
   "focus_session_id": "string",
-  "app_name": "string",
-  "duration": "number",
-  "timestamp": "timestamp"
-}
-```
-
----
-
-### 🛡️ WhitelistSessions
-
-| Alan                         | Tip       | Açıklama                            |
-| ---------------------------- | --------- | ----------------------------------- |
-| **`user_id`**                | string    | Kullanıcı referansı                 |
-| `total_duration_seconds`     | number    | Toplam seans süresi (saniye)        |
-| `violation_duration_seconds` | number    | Toplam ihlal süresi (saniye)        |
-| `total_duration_hms`         | string    | Toplam süre (okunabilir, SS:DD:SN)  |
-| `violation_duration_hms`     | string    | İhlal süresi (okunabilir, SS:DD:SN) |
-| `violation_count`            | number    | Toplam ihlal sayısı                 |
-| `violations`                 | object[]  | İhlal detayları listesi             |
-| `session_started_at`         | timestamp | Seans başlangıç zamanı              |
-| `session_ended_at`           | timestamp | Seans bitiş zamanı                  |
-| `saved_at`                   | timestamp | Kaydedilme zamanı                   |
-
-```json
-{
-  "user_id": "string",
   "total_duration_seconds": "number",
   "violation_duration_seconds": "number",
   "total_duration_hms": "string",
@@ -422,7 +412,10 @@ Firestore
   "violations": [
     {
       "app_name": "string",
-      "duration": "number"
+      "duration_seconds": "number",
+      "duration_hms": "string",
+      "started_at": "timestamp",
+      "ended_at": "timestamp"
     }
   ],
   "session_started_at": "timestamp",
@@ -430,27 +423,27 @@ Firestore
   "saved_at": "timestamp"
 }
 ```
-
+ 
 ---
-
+ 
 ### 📝 Exams
-
-| Alan                 | Tip       | Açıklama              |
-| -------------------- | --------- | --------------------- |
-| **`user_id`**        | string    | Kullanıcı referansı   |
-| `exam_schedule_name` | string    | Sınav takvimi adı     |
-| `updated_at`         | timestamp | Son güncelleme zamanı |
-| `exams`              | object[]  | Sınav listesi         |
-
+ 
+| Alan                 | Tip       | Açıklama                                    |
+| -------------------- | --------- | ------------------------------------------- |
+| **`user_id`**            | string    | Kullanıcı referansı                         |
+| `exam_schedule_name` | string    | Sınav takvimi adı                           |
+| `updated_at`         | timestamp | `SERVER_TIMESTAMP` — son güncelleme zamanı  |
+| `exams`              | object[]  | Sınav listesi                               |
+ 
 #### `exams[]` — Dizi Elemanı
-
-| Alan            | Tip    | Açıklama                                         |
-| --------------- | ------ | ------------------------------------------------ |
-| **`course_id`** | string | Ders referansı                                   |
-| `exam_type`     | string | Sınav türü (örn: `Vize`, `Final`)                |
-| `exam_date`     | string | Sınav tarihi                                     |
-| `exam_grade`    | string | Sınav notu (Courses tablosuna senkronize edilir) |
-
+ 
+| Alan         | Tip    | Açıklama                                                         |
+| ------------ | ------ | ---------------------------------------------------------------- |
+| **`course_id`**  | string | Ders referansı                                                   |
+| `exam_type`  | string | Sınav türü (`"Vize"`, `"Final"` vb.)                            |
+| `exam_date`  | string | Sınav tarihi                                                     |
+| `exam_grade` | string | Sınav notu — Courses tablosuna CASCADE senkronize edilir         |
+ 
 ```json
 {
   "user_id": "string",
@@ -466,7 +459,9 @@ Firestore
   ]
 }
 ```
-
+ 
+> **Not:** `save_exam_schedule` Courses tablosuna CASCADE sync uygular. `delete_exam_schedule` ise silinmiş derslerin `exam_date` ve `exam_grades` alanlarını sıfırlar.
+ 
 ---
 
 ## 🛠️ Geliştirici Kullanım Rehberi
