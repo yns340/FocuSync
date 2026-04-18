@@ -1,12 +1,61 @@
 import numpy as np
+import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-    QFrame, QSpinBox, QMessageBox, QSizePolicy
+    QFrame, QDialog, QMessageBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QPainter, QPen, QImage, QPixmap
 
 from head_tracker import HeadTracker 
+
+# Ses çalmak için güvenli import (Mac/Linux çökmesini engeller)
+try:
+    import winsound
+except ImportError:
+    class DummySound:
+        def Beep(self, freq, duration): pass
+        def PlaySound(self, sound, flags): pass
+        def MessageBeep(self, type): pass
+        SND_ALIAS = 0
+        SND_ASYNC = 0
+        MB_ICONEXCLAMATION = 0
+    winsound = DummySound()
+
+# ==========================================
+#  DİKKAT DAĞILDI POP-UP PENCERESİ (YENİ)
+# ==========================================
+class DistractionAlertDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Dikkat Dağıldı!")
+        self.setModal(False) # Uygulamayı kilitlemesin
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.WindowStaysOnTopHint # HER ZAMAN EN ÜSTTE KALIR
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.Tool
+        )
+        self.resize(350, 150)
+        self.setStyleSheet("""
+            QDialog {
+                background: #111318;
+                border: 2px solid #ff6b35;
+                border-radius: 12px;
+            }
+            QLabel {
+                color: #ff6b35;
+                font-size: 16px;
+                font-weight: bold;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        lbl = QLabel("🔴 DİKKAT DAĞILDI!\n\nLütfen ekrana geri dönün\nveya seansı bitirin.")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl)
+
 
 class FocusCircle(QWidget):
     def __init__(self, size=120, parent=None):
@@ -68,15 +117,16 @@ class FocusPage(QWidget):
 
     def __init__(self, user_id: int, db_manager, parent=None):
         super().__init__(parent)
-        self.user_id = user_id
+        self.user_id = str(user_id) # Garanti string yapalım
         self.db_manager = db_manager
         
         self._session_active = False
         self._elapsed = 0
-        self._focused_elapsed = 0
         
         self.tracker = None
         self.is_user_focused = True 
+        
+        self._distraction_dialog = None # Pop-up için
         
         self._timer = QTimer()
         self._timer.timeout.connect(self._tick)
@@ -118,56 +168,59 @@ class FocusPage(QWidget):
         self.cam_placeholder = QLabel("📷\nOturum Başladığında Aktif Olacak")
         self.cam_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cam_placeholder.setStyleSheet("color:#2e3248;font-size:14px;background:transparent;border:none;")
-        self.cam_placeholder.setMinimumSize(480, 320) # Kameraya devasa bir alan açtık
+        self.cam_placeholder.setMinimumSize(480, 320)
         self.cam_placeholder.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
         cfl.addWidget(self.cam_placeholder)
         cl.addWidget(cam_frame)
-        left.addWidget(cam_card, 2) # Kameraya daha fazla dikey alan verdik
+        left.addWidget(cam_card, 2) 
 
-        # --- ZAMANLAYICI KARTI (YENİ TASARIM) ---
+        # --- ZAMANLAYICI KARTI ---
         timer_card = QFrame()
         timer_card.setStyleSheet("background:#111318;border:1px solid #1e2130;border-radius:14px;")
         tl = QHBoxLayout(timer_card); 
-        tl.setContentsMargins(30,20,30,20); # İç boşlukları ferahlattık
+        tl.setContentsMargins(30,20,30,20); 
         tl.setSpacing(20)
 
         timer_info = QVBoxLayout()
         timer_info.addWidget(self._sec("⏱️ Seans Süresi"))
         self.timer_lbl = QLabel("00:00:00")
-        self.timer_lbl.setFont(QFont("Segoe UI",48,QFont.Weight.Bold)) # Yazıyı devasa yaptık
+        self.timer_lbl.setFont(QFont("Segoe UI",48,QFont.Weight.Bold)) 
         self.timer_lbl.setStyleSheet("color:#00e5a0;letter-spacing:4px;background:transparent;border:none;")
         timer_info.addWidget(self.timer_lbl)
         tl.addLayout(timer_info); 
         
-        tl.addStretch() # Sağ ve sol kutuyu birbirinden ayırır
+        tl.addStretch()
 
+        #  DERS SEÇİMİ VE BAŞLATMA BUTONU
         btn_col = QVBoxLayout()
-        btn_col.setAlignment(Qt.AlignmentFlag.AlignVCenter) # Butonu dikeyde ortala
+        btn_col.setAlignment(Qt.AlignmentFlag.AlignVCenter) 
+        
+        # Course dropdown
+        course_lbl = QLabel("Ders Seçimi:")
+        course_lbl.setStyleSheet("color:#a1a1aa; font-weight:bold; font-size:12px;")
+        btn_col.addWidget(course_lbl)
+        
+        self.course_combo = QComboBox()
+        self.course_combo.setFixedHeight(36)
+        self.course_combo.setStyleSheet("""
+            QComboBox { background:#1e2130; color:#f3f4f6; border:1px solid #2a3042; border-radius:6px; padding:4px 10px; }
+            QComboBox::drop-down { border:none; }
+        """)
+        self._load_courses() # Veritabanından dersleri çek
+        btn_col.addWidget(self.course_combo)
+        
+        btn_col.addSpacing(10)
+
         self.start_btn = QPushButton("▶  Seansı Başlat")
         self.start_btn.setObjectName("primary_btn")
-        self.start_btn.setFixedSize(220, 60) # Butonu büyüttük
-        
-        font = self.start_btn.font()
-        font.setPointSize(14) # Buton yazısını büyüttük
-        self.start_btn.setFont(font)
+        self.start_btn.setFixedSize(220, 50) 
+        font = self.start_btn.font(); font.setPointSize(14); self.start_btn.setFont(font)
         self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #00e5a0;
-                border: 2px solid #00e5a0;
-                border-radius: 8px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #00e5a0;
-                color: #111318;
-            }
-            QPushButton:pressed {
-                background-color: #00e5a0;
-                color: #111318;
-            }
+            QPushButton { background-color: transparent; color: #00e5a0; border: 2px solid #00e5a0; border-radius: 8px; font-weight: bold; }
+            QPushButton:hover { background-color: #00e5a0; color: #111318; }
+            QPushButton:pressed { background-color: #00e5a0; color: #111318; }
         """)
 
         self.start_btn.clicked.connect(self._toggle_session)
@@ -184,7 +237,7 @@ class FocusPage(QWidget):
         scl.addWidget(self._sec("Anlık Odak Skoru"))
 
         cring_row = QHBoxLayout(); cring_row.addStretch()
-        self.focus_ring = FocusCircle(140); # Skoru da biraz daha büyüttük
+        self.focus_ring = FocusCircle(140); 
         cring_row.addWidget(self.focus_ring); cring_row.addStretch()
         scl.addLayout(cring_row)
         right.addWidget(score_card)
@@ -197,6 +250,22 @@ class FocusPage(QWidget):
         l.setStyleSheet("color:#e4e6ed;background:transparent;border:none;")
         return l
 
+    def _load_courses(self):
+        """Veritabanından kullanıcının derslerini çeker ve ComboBox'a ekler"""
+        self.course_combo.clear() # 🔥 YENİ: Listeyi yeniden doldurmadan önce eskilere bir temizlik çek!
+        
+        try:
+            success, courses = self.db_manager.get_courses(self.user_id)
+            if success and courses:
+                for c in courses:
+                    if c.get("is_active", True):
+                        self.course_combo.addItem(c.get("course_name", "İsimsiz Ders"), c.get("course_id"))
+            
+            if self.course_combo.count() == 0:
+                self.course_combo.addItem("Genel Çalışma", "genel_calisma")
+        except Exception as e:
+            self.course_combo.addItem("Genel Çalışma", "genel_calisma")
+
     def _toggle_session(self):
         if not self._session_active:
             self._start_session()
@@ -206,7 +275,6 @@ class FocusPage(QWidget):
     def _start_session(self):
         self._session_active = True
         self._elapsed = 0
-        self._focused_elapsed = 0
         self.is_user_focused = True
 
         self.tracker = HeadTracker()
@@ -214,9 +282,10 @@ class FocusPage(QWidget):
         self.tracker.face_missing.connect(self._on_face_missing)
         self.tracker.error_occurred.connect(self._on_error)
         self.tracker.session_completed.connect(self._on_session_completed)
-        
-        # 🔥 YENİ: Kamera görüntüsünü bağladık
         self.tracker.frame_processed.connect(self._on_frame_processed)
+        
+        # UI Kilitleri
+        self.course_combo.setEnabled(False) 
         
         self.tracker.start()
 
@@ -226,9 +295,12 @@ class FocusPage(QWidget):
 
         self.focus_ring.set_value(100, "#00e5a0")
         self._timer.start(1000)
+        
         self.start_btn.setText("⏹  Seansı Bitir")
-        self.start_btn.setObjectName("danger_btn")
-        self.start_btn.style().unpolish(self.start_btn); self.start_btn.style().polish(self.start_btn)
+        self.start_btn.setStyleSheet("""
+            QPushButton { background-color: transparent; color: #ff6b35; border: 2px solid #ff6b35; border-radius: 8px; font-weight: bold; }
+            QPushButton:hover { background-color: #ff6b35; color: #111318; }
+        """)
         self.notif.show_warning("▶","Odak seansı ve Kamera Takibi başladı!","#00e5a0",3000)
 
     def _end_session(self):
@@ -238,50 +310,75 @@ class FocusPage(QWidget):
         if self.tracker:
             self.tracker.stop()
 
+        # Açık kalmış olabilecek uyarı pop-up'ını kapat
+        self._hide_distraction_popup()
+
         self.cam_status_lbl.setText("⬤  Kapalı")
         self.cam_status_lbl.setStyleSheet("color:#6b7280;font-size:11px;background:transparent;border:none;")
-        
-        # 🔥 YENİ: Kapanınca resmi sil ve yazıyı geri getir
         self.cam_placeholder.clear()
         self.cam_placeholder.setText("📷\nKamera Beklemede")
 
+        self.course_combo.setEnabled(True)
+        
         self.start_btn.setText("▶  Seansı Başlat")
-        self.start_btn.setObjectName("primary_btn")
-        self.start_btn.style().unpolish(self.start_btn); self.start_btn.style().polish(self.start_btn)
+        self.start_btn.setStyleSheet("""
+            QPushButton { background-color: transparent; color: #00e5a0; border: 2px solid #00e5a0; border-radius: 8px; font-weight: bold; }
+            QPushButton:hover { background-color: #00e5a0; color: #111318; }
+        """)
+        
         self._elapsed = 0
         self.timer_lbl.setText("00:00:00")
 
     # ==========================================
-    # 🔥 HEAD TRACKER SİNYAL YAKALAYICILARI
+    #  POP-UP SES VE GÖRÜNTÜ YÖNETİMİ
     # ==========================================
-    
+    def _show_distraction_popup(self):
+        if not self._distraction_dialog:
+            self._distraction_dialog = DistractionAlertDialog(self)
+        
+        if not self._distraction_dialog.isVisible():
+            self._distraction_dialog.show()
+            # Sistemin varsayılan hata/uyarı sesini çal
+            try:
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            except Exception:
+                pass
+
+    def _hide_distraction_popup(self):
+        if self._distraction_dialog and self._distraction_dialog.isVisible():
+            self._distraction_dialog.hide()
+
+    # ==========================================
+    #  HEAD TRACKER SİNYAL YAKALAYICILARI
+    # ==========================================
     def _on_frame_processed(self, frame):
-        """HeadTracker'dan gelen canlı kamera karesini UI üzerinde renderlar."""
         h, w, ch = frame.shape
         bytes_per_line = ch * w
-        
-        # Numpy array'ini PyQt'nin anlayacağı resim formatına (QImage) çevir
         q_img = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(q_img)
-        
-        # Resmi QLabel kutusuna tam sığacak ama oranını bozmayacak şekilde ölçekle
         scaled_pixmap = pixmap.scaled(
             self.cam_placeholder.size(), 
             Qt.AspectRatioMode.KeepAspectRatio, 
             Qt.TransformationMode.SmoothTransformation
         )
-        
         self.cam_placeholder.setPixmap(scaled_pixmap)
 
     def _on_focus_changed(self, is_focused):
         self.is_user_focused = is_focused
         if not is_focused:
             self.notif.show_warning("🔴", "Dikkat Dağıldı! Lütfen ekrana odaklanın.", "#ff6b35", 3000)
+            self._show_distraction_popup() # YENİ: Sesli Popup Göster
+        else:
+            self._hide_distraction_popup() # YENİ: Ekrana bakınca popup'ı kapat
 
     def _on_face_missing(self, is_missing):
         if is_missing:
             self.is_user_focused = False
             self.notif.show_warning("⚠️", "Yüz bulunamadı! Lütfen kameraya görünün.", "#f59e0b", 3000)
+            self._show_distraction_popup()
+        else:
+            self.is_user_focused = True
+            self._hide_distraction_popup()
 
     def _on_error(self, msg):
         QMessageBox.critical(self, "Kamera Hatası", f"Beklenmeyen bir donanım hatası oluştu:\n{msg}")
@@ -291,12 +388,15 @@ class FocusPage(QWidget):
         actual_focus_time = session_data["actual_focus_time"] 
         score = session_data["focus_score"] 
         head_tilt = session_data["head_tilt_degree"] 
+        
+        #Seçilen dersin ID'sini al
+        selected_course_id = self.course_combo.currentData()
 
         try:
             success, msg = self.db_manager.add_focus_session(
                 self.user_id,             
                 "manuel_plan",            
-                "Genel Çalışma",          
+                selected_course_id, # Artık rastgele string değil, Combobox'tan seçilen ders ID'si gidiyor 
                 actual_focus_time,        
                 head_tilt,                
                 score,                    
@@ -308,20 +408,35 @@ class FocusPage(QWidget):
 
     def _tick(self):
         self._elapsed += 1
-        if self.is_user_focused:
-            self._focused_elapsed += 1 
             
         h = self._elapsed // 3600; m = (self._elapsed % 3600) // 60; s = self._elapsed % 60
         self.timer_lbl.setText(f"{h:02d}:{m:02d}:{s:02d}")
 
-        if self._elapsed > 0:
-            current_score = int((self._focused_elapsed / self._elapsed) * 100)
+        
+        # Tracker'ın gönderdiği salise bazlı gerçek veriyi ekrana yansıt
+        if self.tracker and self.tracker.total_session_time > 0:
+            current_score = int((self.tracker.total_focus_time / self.tracker.total_session_time) * 100)
+            
             color = "#00e5a0"
             if current_score < 50: color = "#ff6b35"
             elif current_score < 80: color = "#f59e0b"
             self.focus_ring.set_value(current_score, color)
 
+    # ==========================================
+    # 🔥 YENİ: SAYFA HER AÇILDIĞINDA ÇALIŞAN TETİKLEYİCİ
+    # ==========================================
+    def showEvent(self, event):
+        """Kullanıcı bu sayfaya her tıkladığında/gördüğünde otomatik çalışır."""
+        super().showEvent(event)
+        
+        # Sayfaya her girildiğinde ders listesini sessizce güncelle
+        # (Böylece kullanıcı programı kapat-aç yapmak zorunda kalmaz)
+        self._load_courses()
+
     def cleanup(self):
         self._timer.stop()
+        self._hide_distraction_popup()
         if self.tracker:
             self.tracker.stop()
+
+    
