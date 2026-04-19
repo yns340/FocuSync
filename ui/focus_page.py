@@ -1,5 +1,7 @@
 import numpy as np
 import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QFrame, QDialog, QMessageBox, QSizePolicy
@@ -9,7 +11,7 @@ from PyQt6.QtGui import QFont, QColor, QPainter, QPen, QImage, QPixmap
 
 from head_tracker import HeadTracker 
 
-from decision_engine import FocusDecisionEngine
+from decision_engine import GeneticScheduler, FocusDecisionEngine
 from PyQt6.QtWidgets import QMessageBox 
 
 # Ses çalmak için güvenli import (Mac/Linux çökmesini engeller)
@@ -230,11 +232,11 @@ class FocusPage(QWidget):
         
         tl.addStretch()
 
-        #  DERS SEÇİMİ VE BAŞLATMA BUTONU
+# --- DERS VE SEANS SEÇİM PANELİ 
         btn_col = QVBoxLayout()
         btn_col.setAlignment(Qt.AlignmentFlag.AlignVCenter) 
         
-        # Course dropdown
+        # 1. DERS SEÇİMİ 
         course_lbl = QLabel("Ders Seçimi:")
         course_lbl.setStyleSheet("color:#a1a1aa; font-weight:bold; font-size:12px;")
         btn_col.addWidget(course_lbl)
@@ -245,10 +247,23 @@ class FocusPage(QWidget):
             QComboBox { background:#1e2130; color:#f3f4f6; border:1px solid #2a3042; border-radius:6px; padding:4px 10px; }
             QComboBox::drop-down { border:none; }
         """)
-        self._load_courses() # Veritabanından dersleri çek
+        self._load_courses() 
         btn_col.addWidget(self.course_combo)
         
         btn_col.addSpacing(10)
+
+        # 2. SEANS SEÇİMİ 
+        session_lbl = QLabel("İlgili Program Seansı:")
+        session_lbl.setStyleSheet("color:#a1a1aa; font-weight:bold; font-size:12px;")
+        btn_col.addWidget(session_lbl)
+        
+        self.session_combo = QComboBox()
+        self.session_combo.setFixedHeight(36)
+        self.session_combo.setStyleSheet(self.course_combo.styleSheet()) 
+        self._load_recommended_plan() 
+        btn_col.addWidget(self.session_combo)
+        
+        btn_col.addSpacing(15)
 
         self.start_btn = QPushButton("▶  Seansı Başlat")
         self.start_btn.setObjectName("primary_btn")
@@ -282,6 +297,8 @@ class FocusPage(QWidget):
         right.addStretch()
         main_row.addLayout(right, 2)
         root.addLayout(main_row, 1)
+        
+        self._load_recommended_plan() # Sayfa açılırken GA planını yükle
 
     def _sec(self, text):
         l = QLabel(text); l.setFont(QFont("Segoe UI",13,QFont.Weight.Bold))
@@ -457,15 +474,17 @@ class FocusPage(QWidget):
         selected_course_id = self.course_combo.currentData()
 
         try:
+            selected_session_id = self.session_combo.currentData() 
+
             success, msg = self.db_manager.add_focus_session(
-                self.user_id,             
-                "manuel_plan",            
-                selected_course_id, # Artık rastgele string değil, Combobox'tan seçilen ders ID'si gidiyor 
-                actual_focus_time,        
+               self.user_id,             
+               selected_session_id, # ARTIK BURASI DİNAMİK
+               selected_course_id,
+               actual_focus_time,        
                 head_tilt,                
                 score,                    
-                "Completed"               
-            )
+               "Completed"               
+            )   
             self.notif.show_warning("✅",f"Seans tamamlandı! Veritabanına kaydedildi. Skor: %{score}", "#00e5a0", 6000)
         except Exception as e:
             QMessageBox.critical(self, "Bağlantı Hatası", f"Veritabanına bağlanılamadı! İnternet bağlantınızı kontrol edin.\n\nDetay: {str(e)}")
@@ -522,61 +541,86 @@ class FocusPage(QWidget):
         self._load_courses()
         
     def on_session_finished_with_ai(self, session_data):
-        """SRS 3.2.7.1: Simulated Annealing ile Otonom Karar Mekanizması"""
+        """SRS 3.2.7.1: AI seans sonu analizi ve ders zorluğu güncellemesi."""
         try:
             if self.tracker:
                 self.tracker.is_running = False
 
-            # Verilerin alınması
+            # Gerekli verileri hazırla
             score = session_data.get("focus_score", 0)
-            violations = getattr(self, 'current_violations', 0)
-            current_work_time = self.work_spin.value()
-            current_break_time = self.break_spin.value()
+            violations = self.current_violations
+            current_work = self.work_spin.value()
+            current_break = self.break_spin.value()
+            selected_course_id = self.course_combo.currentData()
             
-            # SA Algoritması ile yeni değerlerin hesaplanması
-            # Enerji hesabı (Verimsizlik)
-            energy = (100 - score) + (violations * 10)
+            # Verimsizlik Enerjisi Hesabı
+            energy = (100 - score) + (violations * 8) 
             
-            if energy > 45: # Verim düşükse: Çalışma süresi azaltılır, mola süresi artırılır
-                new_work = current_work_time - 5
-                new_break = current_break_time + 2
-                ai_msg = "Odak performansın düştüğü için çalışma süren kısaltıldı, mola süren artırıldı."
-            elif energy < 15: # Verim çok iyiyse: Çalışma süresi artırılır, mola süresi hafif azaltılır
-                new_work = current_work_time + 5
-                new_break = max(5, current_break_time - 1)
-                ai_msg = "Harika gidiyorsun! Tempoyu artırmak için çalışma süren uzatıldı."
-            else: # Stabil durum
-                new_work = current_work_time
-                new_break = current_break_time
-                ai_msg = "Verimliliğin stabil düzeyde. Mevcut program korunuyor."
+            ai_reports = [] # Bildirimleri burada toplayacağız
+            
+            # 1. SÜRE OPTİMİZASYONU (Simulated Annealing Mantığı)
+            if energy > 45: # Performans düşük, mola artmalı
+                new_work = current_work - 5
+                new_break = current_break + 2
+                ai_reports.append(f"• Odak performansın düştüğü için bir sonraki çalışma süren {new_work} dakikaya düşürüldü ve molan {new_break} dakikaya çıkarıldı.")
+            elif energy < 15: # Performans harika, çalışma artabilir
+                new_work = current_work + 5
+                new_break = max(5, current_break - 1)
+                ai_reports.append(f"• Müthiş bir odaklanma! Bir sonraki çalışma süren {new_work} dakikaya uzatıldı.")
+            else:
+                new_work, new_break = current_work, current_break
+                ai_reports.append("• Odaklanma düzeyin gayet dengeli, mevcut program korunuyor.")
 
-            # 3. SpinBox'lar güncellenir (Limitler: Çalışma 15-60 dk, Mola 5-30 dk)
+            # 2. DERS ZORLUĞU ÖĞRENME 
+            if energy > 65:
+                self.db_manager.update_course_difficulty(self.user_id, selected_course_id, "increase")
+                ai_reports.append("• Bu derste çok zorlandığını fark ettim; ders zorluk seviyesi artırıldı. GA bir sonraki planlamada bu dersi daha verimli saatlerine koyacak.")
+            elif energy < 10:
+                self.db_manager.update_course_difficulty(self.user_id, selected_course_id, "decrease")
+                ai_reports.append("• Bu dersi kolaylıkla hallediyorsun; ders zorluk seviyesi optimize edildi.")
+
+            # Arayüzü güncelle
             self.work_spin.setValue(max(15, min(new_work, 60)))
             self.break_spin.setValue(max(5, min(new_break, 30)))
             
-            # 4. AI Karar Kutusunu Hazırla ve Göster
-            from PyQt6.QtWidgets import QMessageBox
-            msg = QMessageBox(None)
-            msg.setWindowTitle("FocuSync AI Analizi")
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("OTURUM ANALİZİ VE OPTİMİZASYON")
-            msg.setInformativeText(
-                f" Odak Skorun: %{score:.1f}\n"
-                f" Kural İhlali: {violations}\n\n"
-                f" AI Kararı: {ai_msg}\n\n"
-                f" Yeni Plan: {self.work_spin.value()} dk Çalışma / {self.break_spin.value()} dk Mola"
-            )
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.setStyleSheet("background-color: #111318; color: white; font-size: 13px;")
+            # 3. SONUÇ PENCERESİ 
+            final_report = "\n\n".join(ai_reports)
+            msg = QMessageBox(self)
+            msg.setWindowTitle("🤖 AI Seans Analizi")
+            msg.setText(f"<b>Seans Başarısı: %{score}</b><br>İhlal Sayısı: {violations}")
+            msg.setInformativeText(final_report)
+            msg.setStyleSheet("QLabel{ min-width: 400px; color: #e4e6ed; } QPushButton{ width: 80px; }")
             msg.exec()
             
-            # 5. Seansı tamamla ve temizle
+            # Verileri DB'ye kaydet ve sıfırla
             self._on_session_completed(session_data)
             self.current_violations = 0
             
         except Exception as e:
-            print(f"AI Metodu Hatası: {e}")
+            print(f"AI Bildirim Hatası: {e}")
             self._on_session_completed(session_data)
+            
+    def _load_recommended_plan(self):
+        try:
+            # Örnek veriler (İleride db_manager üzerinden gerçek verileri çekeceğiz)
+            history = {"09:00": 90, "11:00": 75, "15:00": 60} 
+            courses = ["BM314 Yazılım Mühendisliği", "BM312 Mikroişlemciler"]
+            
+            
+            from decision_engine import GeneticScheduler
+            scheduler = GeneticScheduler(courses, history)
+            optimal_plan = scheduler.generate_optimal_plan()
+            
+            # ComboBox'ı temizle ve yeni planı doldur
+            self.session_combo.clear()
+            for time, course in optimal_plan.items():
+                session_text = f"{time} - {course}"
+                # Yunus'un beklediği benzersiz session_id'yi yaratıyoruz
+                session_id = f"sess_{time.replace(':', '')}" 
+                self.session_combo.addItem(session_text, session_id)
+                
+        except Exception as e:
+            print(f"Plan yükleme hatası: {e}")
 
     def cleanup(self):
         self._timer.stop()

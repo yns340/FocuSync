@@ -103,33 +103,32 @@ class DatabaseManager:
             return False, f"Profil güncelleme hatası: {str(e)}"
 
     def get_dashboard_stats(self, user_id):
-        """Dashboard sayfası için gerekli özet istatistikleri hesaplar ve döndürür."""
+        """SRS 3.2.8: Yunus'un FocusSessions tablosundan gerçek verileri çeker."""
         try:
             stats = {
                 "user_name": "",
                 "course_count": 0,
                 "avg_focus_score": 0,
-                "total_study_time": 0, # Dakika cinsinden
+                "total_study_time": 0,
                 "violation_count": 0
             }
 
-            # 1. Kullanıcı Adını Al
+            # 1. Kullanıcı Adı
             user_doc = self.db.collection("Users").document(user_id).get()
             if user_doc.exists:
                 stats["user_name"] = user_doc.to_dict().get("name", "")
 
-            # 2. Ders Sayısını Al
-            courses = self.db.collection("Courses").where("user_id", "==", user_id).stream()
+            # 2. Aktif Ders Sayısı
+            courses = self.db.collection("Courses").where("user_id", "==", user_id).where("is_active", "==", True).stream()
             stats["course_count"] = sum(1 for _ in courses)
 
-            # 3. İhlal Sayısını Al
-            violations = self.db.collection("Violations").where("user_id", "==", user_id).stream()
-            stats["violation_count"] = sum(1 for _ in violations)
+            # 3. İhlal Sayısı (WhitelistSessions tablosundan toplam ihlaller)
+            wl_sessions = self.db.collection("WhitelistSessions").where("user_id", "==", user_id).stream()
+            stats["violation_count"] = sum(s.to_dict().get("violation_count", 0) for s in wl_sessions)
 
-            # 4. Toplam Çalışma Süresi ve Ortalama Odak Skoru
+            # 4. Ortalama Odak ve Toplam Süre (Yunus'un beklediği tablo)
             sessions = self.db.collection("FocusSessions").where("user_id", "==", user_id).stream()
-            total_score = 0
-            session_count = 0
+            total_score, session_count = 0, 0
             
             for session in sessions:
                 data = session.to_dict()
@@ -138,11 +137,11 @@ class DatabaseManager:
                 session_count += 1
                 
             if session_count > 0:
-                stats["avg_focus_score"] = int(total_score / session_count)
+                stats["avg_focus_score"] = round(total_score / session_count, 1)
 
             return True, stats
         except Exception as e:
-            return False, f"Dashboard verileri alınamadı: {str(e)}"
+            return False, f"Hata: {str(e)}"
 
     # ==========================================
     # PROJE MİMARİSİ FONKSİYONLARI (FocuSync SPMP)
@@ -267,14 +266,11 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Plan oluşturma hatası: {str(e)}"
 
-    def add_focus_session(self, user_id, study_plan_session_id, course_id, actual_focus_time,head_tilt_degree, focus_score, status):
-        """
-        FocusSessions: Akif'in kamera sisteminden gelen GERÇEKLEŞEN odaklanma raporunu kaydeder.
-        """
+    def add_focus_session(self, user_id, study_plan_session_id, course_id, actual_focus_time, head_tilt_degree, focus_score, status):
         try:
             self.db.collection("FocusSessions").add({
                 "user_id": user_id,
-                "study_plan_session_id": study_plan_session_id, 
+                "study_plan_session_id": study_plan_session_id, # ComboBox'tan gelen sess_0900 gibi ID
                 "course_id": course_id,
                 "actual_focus_time": int(actual_focus_time),
                 "head_tilt_degree": float(head_tilt_degree),
@@ -282,7 +278,7 @@ class DatabaseManager:
                 "status": status,
                 "timestamp": firestore.SERVER_TIMESTAMP
             })
-            return True, "Odaklanma seansı kaydedildi."
+            return True, "Odaklanma seansı başarıyla kaydedildi."
         except Exception as e:
             return False, f"Seans ekleme hatası: {str(e)}"
 
@@ -432,15 +428,26 @@ class DatabaseManager:
     # UPDATE (GÜNCELLEME) FONKSİYONLARI - ALGORİTMA İÇİN
     # ==========================================
 
-    def update_course_difficulty(self, user_id, course_id, new_difficulty):
-        """SPMP Algoritması: Dersin zorluk seviyesini günceller."""
+    def update_course_difficulty(self, user_id, course_id, action):
+        """Seans sonucuna göre dersin zorluğunu otonom günceller."""
         try:
             unique_doc_id = f"{user_id}_{course_id}"
             doc_ref = self.db.collection("Courses").document(unique_doc_id)
-            doc_ref.update({"difficulty_level": float(new_difficulty)})
-            return True, "Ders zorluğu algoritma tarafından güncellendi."
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                current_diff = doc.to_dict().get("difficulty_level", 3.0)
+                
+                if action == "increase":
+                    new_diff = min(5.0, current_diff + 0.5) # Max 5.0
+                else:
+                    new_diff = max(1.0, current_diff - 0.2) # Min 1.0
+                
+                doc_ref.update({"difficulty_level": float(new_diff)})
+                return True, "Zorluk güncellendi."
+            return False, "Ders bulunamadı."
         except Exception as e:
-            return False, f"Zorluk güncelleme hatası: {str(e)}"
+            return False, str(e)
 
     def mark_session_completed(self, plan_id, day, session_id):
         """
