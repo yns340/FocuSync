@@ -374,7 +374,7 @@ class FocusPage(QWidget):
         self._hide_distraction_popup()
 
         # ✅ ÖNCE: FocusSessions dokümanını oluştur
-        if self._bypass_camera_for_test and self.current_focus_session_id and self._elapsed > 0:
+        if self.current_focus_session_id and self._elapsed > 0:
             self._save_focus_session_record(
                 actual_focus_time=self._elapsed,
                 score=100,
