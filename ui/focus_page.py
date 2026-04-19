@@ -133,6 +133,7 @@ class FocusPage(QWidget):
         self._timer = QTimer()
         self._timer.timeout.connect(self._tick)
         self._build_ui()
+        self.current_focus_session_id = None
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -280,7 +281,10 @@ class FocusPage(QWidget):
         self._elapsed = 0
         self.is_user_focused = True
 
+        self.current_focus_session_id = self.db_manager.prepare_focus_session_id()
+
         if self.whitelist_page:
+            self.whitelist_page.set_focus_session_id(self.current_focus_session_id)
             ok = self.whitelist_page.start_monitoring()
             if not ok:
                 QMessageBox.warning(self, "Uyarı", "Whitelist izleme başlatılamadı.")
@@ -325,33 +329,80 @@ class FocusPage(QWidget):
             QPushButton:hover { background-color: #ff6b35; color: #111318; }
         """)
         self.notif.show_warning("▶","Odak seansı ve Kamera Takibi başladı!","#00e5a0",3000)
+    def _save_focus_session_record(self, actual_focus_time, score, head_tilt, status="Completed"):
+        selected_course_id = self.course_combo.currentData()
 
+        try:
+            success, msg = self.db_manager.add_focus_session(
+                self.user_id,
+                "manuel_plan",
+                selected_course_id,
+                actual_focus_time,
+                head_tilt,
+                score,
+                status
+            )
+
+            if not success:
+                QMessageBox.warning(self, "Kayıt Hatası", msg)
+                return False
+
+            self.notif.show_warning(
+                "✅",
+                f"Seans tamamlandı! Veritabanına kaydedildi. Skor: %{score}",
+                "#00e5a0",
+                6000
+            )
+
+            self.current_focus_session_id = None
+            return True
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Bağlantı Hatası",
+                f"Veritabanına bağlanılamadı! İnternet bağlantınızı kontrol edin.\n\nDetay: {str(e)}"
+            )
+            return False
     def _end_session(self):
         self._session_active = False
         self._timer.stop()
-        
+
         if self.tracker:
             self.tracker.stop()
 
-        # Açık kalmış olabilecek uyarı pop-up'ını kapat
         self._hide_distraction_popup()
 
+        # ✅ ÖNCE: FocusSessions dokümanını oluştur
+        if self.current_focus_session_id and self._elapsed > 0:
+            self._save_focus_session_record(
+                actual_focus_time=self._elapsed,
+                score=100,
+                head_tilt=0.0,
+                status="Completed"
+            )
+
+        # ✅ SONRA: Whitelist session'ı kaydet (artık focus_session_id Firestore'da mevcut)
+        if self.whitelist_page:
+            self.whitelist_page.stop_monitoring()
+
+        # --- UI sıfırlama (değişmedi) ---
         self.cam_status_lbl.setText("⬤  Kapalı")
+        
         self.cam_status_lbl.setStyleSheet("color:#6b7280;font-size:11px;background:transparent;border:none;")
         self.cam_placeholder.clear()
         self.cam_placeholder.setText("📷\nKamera Beklemede")
 
         self.course_combo.setEnabled(True)
-        
+
         self.start_btn.setText("▶  Seansı Başlat")
         self.start_btn.setStyleSheet("""
             QPushButton { background-color: transparent; color: #00e5a0; border: 2px solid #00e5a0; border-radius: 8px; font-weight: bold; }
             QPushButton:hover { background-color: #00e5a0; color: #111318; }
         """)
-        
+
         self._elapsed = 0
         self.timer_lbl.setText("00:00:00")
-
     # ==========================================
     #  POP-UP SES VE GÖRÜNTÜ YÖNETİMİ
     # ==========================================
@@ -410,26 +461,16 @@ class FocusPage(QWidget):
         self._end_session()
 
     def _on_session_completed(self, session_data):
-        actual_focus_time = session_data["actual_focus_time"] 
-        score = session_data["focus_score"] 
-        head_tilt = session_data["head_tilt_degree"] 
-        
-        #Seçilen dersin ID'sini al
-        selected_course_id = self.course_combo.currentData()
+        actual_focus_time = session_data["actual_focus_time"]
+        score = session_data["focus_score"]
+        head_tilt = session_data["head_tilt_degree"]
 
-        try:
-            success, msg = self.db_manager.add_focus_session(
-                self.user_id,             
-                "manuel_plan",            
-                selected_course_id, # Artık rastgele string değil, Combobox'tan seçilen ders ID'si gidiyor 
-                actual_focus_time,        
-                head_tilt,                
-                score,                    
-                "Completed"               
-            )
-            self.notif.show_warning("✅",f"Seans tamamlandı! Veritabanına kaydedildi. Skor: %{score}", "#00e5a0", 6000)
-        except Exception as e:
-            QMessageBox.critical(self, "Bağlantı Hatası", f"Veritabanına bağlanılamadı! İnternet bağlantınızı kontrol edin.\n\nDetay: {str(e)}")
+        self._save_focus_session_record(
+            actual_focus_time=actual_focus_time,
+            score=score,
+            head_tilt=head_tilt,
+            status="Completed"
+        )
 
     def _tick(self):
         self._elapsed += 1
@@ -464,4 +505,3 @@ class FocusPage(QWidget):
         if self.tracker:
             self.tracker.stop()
 
-    
