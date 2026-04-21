@@ -363,6 +363,7 @@ class WhitelistLogic:
 
         self._last_violation_exe: str | None = None
         self._last_violation_detay: str = ""
+        self._current_focus_session_id: str | None = None
 
         self._violation_log: list[dict] = []
         self._active_violation_exe: str = ""
@@ -375,7 +376,8 @@ class WhitelistLogic:
 
     def get_whitelist(self):
         return set(self._whitelist)
-
+    def set_focus_session_id(self, focus_session_id: str | None):
+        self._current_focus_session_id = focus_session_id
     def whitelist_items(self):
         return sorted(self._whitelist)
 
@@ -602,7 +604,8 @@ class WhitelistLogic:
                     datetime.fromtimestamp(session_start, tz=timezone.utc)
                     if session_start is not None else None
                 ),
-                session_ended_at=datetime.now(timezone.utc)
+                session_ended_at=datetime.now(timezone.utc),
+                focus_session_id=self._current_focus_session_id
             )
 
         summary = {
