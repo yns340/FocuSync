@@ -11,11 +11,23 @@ class DatabaseManager:
             firebase_admin.initialize_app(cred)
         
         self.db = firestore.client()
+        self._prepared_focus_session_id = None
+        self._last_focus_session_id = None
 
     # ==========================================
     # KULLANICI PROFİLİ FONKSİYONLARI (WRITE & READ & UPDATE)
     # ==========================================
+    def prepare_focus_session_id(self):
+        """
+        Yeni bir focus session için önceden benzersiz document id üretir.
+        """
+        doc_ref = self.db.collection("FocusSessions").document()
+        self._prepared_focus_session_id = doc_ref.id
+        return self._prepared_focus_session_id
 
+    def get_last_focus_session_id(self):
+        return self._last_focus_session_id
+    
     def _is_valid_email(self, email):
         """E-posta formatının geçerli olup olmadığını RegEx ile kontrol eder."""
         regex_pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
@@ -39,7 +51,7 @@ class DatabaseManager:
             return False, "E-posta veya şifre hatalı."
         except Exception as e:
             return False, f"Sorgu hatası: {str(e)}"
-
+    
     def register_user(self, email, password):
         """Yeni bir kullanıcıyı 'Users' koleksiyonuna şema formatında ekler."""
         if not email.strip() or not password.strip():
@@ -268,10 +280,22 @@ class DatabaseManager:
             return False, f"Plan oluşturma hatası: {str(e)}"
 
     def add_focus_session(self, user_id, study_plan_session_id, course_id, actual_focus_time, head_tilt_degree, focus_score, status):
+        """
+        FocusSessions: Akif'in kamera sisteminden gelen GERÇEKLEŞEN odaklanma raporunu kaydeder.
+        """
         try:
-            self.db.collection("FocusSessions").add({
+            focus_session_id = self._prepared_focus_session_id
+
+            if not focus_session_id:
+                doc_ref = self.db.collection("FocusSessions").document()
+                focus_session_id = doc_ref.id
+            else:
+                doc_ref = self.db.collection("FocusSessions").document(focus_session_id)
+
+            doc_ref.set({
+                
                 "user_id": user_id,
-                "study_plan_session_id": study_plan_session_id, # ComboBox'tan gelen sess_0900 gibi ID
+                "study_plan_session_id": study_plan_session_id,
                 "course_id": course_id,
                 "actual_focus_time": int(actual_focus_time),
                 "head_tilt_degree": float(head_tilt_degree),
@@ -279,7 +303,11 @@ class DatabaseManager:
                 "status": status,
                 "timestamp": firestore.SERVER_TIMESTAMP
             })
-            return True, "Odaklanma seansı başarıyla kaydedildi."
+
+            self._last_focus_session_id = focus_session_id
+            self._prepared_focus_session_id = None
+
+            return True, "Odaklanma seansı kaydedildi."
         except Exception as e:
             return False, f"Seans ekleme hatası: {str(e)}"
 
@@ -293,7 +321,8 @@ class DatabaseManager:
         total_duration_hms: str,
         violation_duration_hms: str,
         session_started_at=None,
-        session_ended_at=None
+        session_ended_at=None,
+        focus_session_id: str | None = None
     ):
         """
         WhitelistSessions:
@@ -302,6 +331,7 @@ class DatabaseManager:
         try:
             self.db.collection("WhitelistSessions").add({
                 "user_id": user_id,
+                "focus_session_id": focus_session_id,
 
                 # ham saniye
                 "total_duration_seconds": int(total_duration),
