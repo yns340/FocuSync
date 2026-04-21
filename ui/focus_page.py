@@ -140,6 +140,7 @@ class FocusPage(QWidget):
         self._timer = QTimer()
         self._timer.timeout.connect(self._tick)
         self._build_ui()
+        self.current_focus_session_id = None
         
         self.decision_engine = FocusDecisionEngine()
         self.current_violations = 0
@@ -334,10 +335,12 @@ class FocusPage(QWidget):
         self._session_active = True
         self._elapsed = 0 
         self.is_user_focused = True
+        self.current_focus_session_id = self.db_manager.prepare_focus_session_id()
         
         self.time_left = self.work_spin.value() * 60
 
         if self.whitelist_page:
+            self.whitelist_page.set_focus_session_id(self.current_focus_session_id)
             ok = self.whitelist_page.start_monitoring()
             if not ok:
                 QMessageBox.warning(self, "Uyarı", "Whitelist izleme başlatılamadı.")
@@ -382,6 +385,43 @@ class FocusPage(QWidget):
             QPushButton:hover { background-color: #ff6b35; color: #111318; }
         """)
         self.notif.show_warning("▶","Odak seansı ve Kamera Takibi başladı!","#00e5a0",3000)
+    
+    def _save_focus_session_record(self, actual_focus_time, score, head_tilt, status="Completed"):
+        selected_course_id = self.course_combo.currentData()
+        selected_session_id = self.session_combo.currentData()
+
+        try:
+            success, msg = self.db_manager.add_focus_session(
+                self.user_id,
+                selected_session_id,
+                selected_course_id,
+                actual_focus_time,
+                head_tilt,
+                score,
+                status
+            )
+
+            if not success:
+                QMessageBox.warning(self, "Kayıt Hatası", msg)
+                return False
+
+            self.notif.show_warning(
+                "✅",
+                f"Seans tamamlandı! Veritabanına kaydedildi. Skor: %{score}",
+                "#00e5a0",
+                6000
+            )
+
+            self.current_focus_session_id = None
+            return True
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Bağlantı Hatası",
+                f"Veritabanına bağlanılamadı! İnternet bağlantınızı kontrol edin.\n\nDetay: {str(e)}"
+            )
+            return False
 
     def _end_session(self):
         self._session_active = False
@@ -392,6 +432,19 @@ class FocusPage(QWidget):
 
         # Açık kalmış olabilecek uyarı pop-up'ını kapat
         self._hide_distraction_popup()
+
+        # ✅ ÖNCE: FocusSessions dokümanını oluştur
+        if self.current_focus_session_id and self._elapsed > 0:
+            self._save_focus_session_record(
+                actual_focus_time=self._elapsed,
+                score=100,
+                head_tilt=0.0,
+                status="Completed"
+            )
+
+        # ✅ SONRA: Whitelist session'ı kaydet
+        if self.whitelist_page:
+            self.whitelist_page.stop_monitoring()
 
         self.cam_status_lbl.setText("⬤  Kapalı")
         self.cam_status_lbl.setStyleSheet("color:#6b7280;font-size:11px;background:transparent;border:none;")
@@ -487,34 +540,22 @@ class FocusPage(QWidget):
         self._end_session()
 
     def _on_session_completed(self, session_data):
-        actual_focus_time = session_data["actual_focus_time"] 
-        score = session_data["focus_score"] 
-        head_tilt = session_data["head_tilt_degree"] 
-        
-        #Seçilen dersin ID'sini al
-        selected_course_id = self.course_combo.currentData()
+        actual_focus_time = session_data["actual_focus_time"]
+        score = session_data["focus_score"]
+        head_tilt = session_data["head_tilt_degree"]
 
-        try:
-            selected_session_id = self.session_combo.currentData() 
-
-            success, msg = self.db_manager.add_focus_session(
-               self.user_id,             
-               selected_session_id, # ARTIK BURASI DİNAMİK
-               selected_course_id,
-               actual_focus_time,        
-                head_tilt,                
-                score,                    
-               "Completed"               
-            )   
-            self.notif.show_warning("✅",f"Seans tamamlandı! Veritabanına kaydedildi. Skor: %{score}", "#00e5a0", 6000)
-        except Exception as e:
-            QMessageBox.critical(self, "Bağlantı Hatası", f"Veritabanına bağlanılamadı! İnternet bağlantınızı kontrol edin.\n\nDetay: {str(e)}")
+        self._save_focus_session_record(
+            actual_focus_time=actual_focus_time,
+            score=score,
+            head_tilt=head_tilt,
+            status="Completed"
+        )
 
 
     def _tick(self):
         if not self._session_active:
             return
-        
+        self._elapsed += 1
         # 1. Geri Sayım Mantığı
         if self.time_left > 0:
             self.time_left -= 1
