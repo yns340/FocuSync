@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import os
 from PyQt6.QtWidgets import (
@@ -277,33 +278,27 @@ class FocusPage(QWidget):
             self._end_session()
 
     def _start_session(self):
+        # ==========================================
+        # 🔥 YENİ: DONANIMSAL KAMERA KONTROLÜ
+        # ==========================================
+        # Arka plana geçmeden önce kamerayı bir anlığına test amaçlı açmaya çalışıyoruz
+        test_cap = cv2.VideoCapture(0)
+        if not test_cap.isOpened():
+            # Kamera yoksa veya başka uygulama kullanıyorsa UI'ı hiç bozmadan uyarı ver ve iptal et
+            QMessageBox.warning(
+                self, 
+                "Kamera Bulunamadı", 
+                "Sistemde aktif bir kamera bulunamadı!\nOdak seansı başlatabilmek için kameranızın takılı ve izinlerinin açık olduğundan emin olun."
+            )
+            return
+            
+        test_cap.release() # Kamera varsa, HeadTracker kullanabilsin diye hemen serbest bırakıyoruz
+        # ==========================================
+
         self._session_active = True
         self._elapsed = 0
         self.is_user_focused = True
 
-        self.current_focus_session_id = self.db_manager.prepare_focus_session_id()
-
-        if self.whitelist_page:
-            self.whitelist_page.set_focus_session_id(self.current_focus_session_id)
-            ok = self.whitelist_page.start_monitoring()
-            if not ok:
-                QMessageBox.warning(self, "Uyarı", "Whitelist izleme başlatılamadı.")
-                self._session_active = False
-                return
-        """
-        if self._bypass_camera_for_test:
-            self.cam_status_lbl.setText("⬤  Test Modu")
-            self.cam_status_lbl.setStyleSheet("color:#f59e0b;font-size:11px;background:transparent;border:none;")
-            self.cam_placeholder.setText("📷\nKamera BYPASS test modu")
-            self.focus_ring.set_value(100, "#00e5a0")
-            self._timer.start(1000)
-            self.start_btn.setText("⏹  Seansı Bitir")
-            self.start_btn.setObjectName("danger_btn")
-            self.start_btn.style().unpolish(self.start_btn)
-            self.start_btn.style().polish(self.start_btn)
-            self.notif.show_warning("🧪", "Test modu: Kamera bypass edildi, whitelist izleme aktif.", "#f59e0b", 4000)
-            return
-        """
         self.tracker = HeadTracker()
         self.tracker.focus_status_changed.connect(self._on_focus_changed)
         self.tracker.face_missing.connect(self._on_face_missing)
