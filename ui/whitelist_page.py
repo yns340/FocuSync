@@ -269,6 +269,9 @@ class WhitelistPage(QWidget):
     def _ensure_alert_dialog(self):
         if self._alert_dialog is None:
             self._alert_dialog = ViolationAlertDialog(self)
+    
+    def set_focus_session_id(self, focus_session_id: str | None):
+        self.logic.set_focus_session_id(focus_session_id)
 
     def _play_alert_sound_once(self):
         try:
