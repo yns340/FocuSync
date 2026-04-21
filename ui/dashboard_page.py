@@ -129,6 +129,8 @@ class DashboardPage(QWidget):
         actions_row.addStretch() 
         lay.addLayout(actions_row)
 
+        self._add_weekly_summary_ui(lay)
+        self._add_risk_analysis_ui(lay)
         lay.addStretch()
         
     def set_user(self, user):
@@ -152,6 +154,17 @@ class DashboardPage(QWidget):
             self.card_time.val_lbl.setText(str(data.get('total_study_time', 0)))
             self.card_viol.val_lbl.setText(str(data.get('violation_count', 0)))
             
+            ok, weekly_data = self.db_manager.get_weekly_analysis(self.user_id)
+            if ok:
+                self.update_weekly_chart(weekly_data)
+            else:
+                self.update_weekly_chart({'Pzt':0,'Sal':0,'Çar':0,'Per':0,'Cum':0,'Cmt':0,'Paz':0})
+            
+            success, risk_data = self.db_manager.get_course_risk_analysis(self.user_id)
+            if success:
+                # Bu veriyi Dashboard'daki yeni panelinde gösterebilirsin
+                print(f"DEBUG: {len(risk_data)} ders için risk analizi yapıldı.")
+                
     def open_grade_calculator(self):
         """Kullanıcının girdiği özel not bileşenlerine göre hedef hesaplaması yapar."""
         try:
@@ -206,6 +219,130 @@ class DashboardPage(QWidget):
 
         except Exception as e:
             print(f"Hesaplayıcı hatası: {e}")
+
+    def update_weekly_chart(self, weekly_data):
+        """
+        weekly_data: {'Pzt': 75, 'Sal': 40, ...} gibi 100 üzerinden skorlar
+        """
+        max_height = 120 # track yüksekliği
+        for day, score in weekly_data.items():
+            if day in self.daily_bars:
+                # Skora göre yüksekliği ayarla (Örn: %80 odak = 96px bar)
+                new_height = int((score / 100) * max_height)
+                self.daily_bars[day].setFixedHeight(max_height if new_height > max_height else new_height)
+            
+        
+    def _add_weekly_summary_ui(self, layout):
+        """Haftalık Verimlilik Grafiği"""
+        summary_frame = QFrame()
+        summary_frame.setStyleSheet("background: #111318; border: 1px solid #1e2130; border-radius: 15px;")
+        s_lay = QVBoxLayout(summary_frame)
+        s_lay.setContentsMargins(20, 20, 20, 20)
+        
+        title = QLabel("📊 HAFTALIK ODAKLANMA TRENDİ")
+        title.setStyleSheet("color: #6b7280; font-weight: bold; font-size: 11px; letter-spacing: 1px; border: none;")
+        s_lay.addWidget(title)
+        s_lay.addSpacing(15)
+        
+        self.daily_bars = {} # Barları gün isimleriyle saklayalım
+        days = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
+        chart_lay = QHBoxLayout()
+        chart_lay.setSpacing(15)
+        
+        for day in days:
+            day_box = QVBoxLayout()
+            
+            # Arka plan kanalı (gri ince çubuk)
+            track = QFrame()
+            track.setFixedWidth(12)
+            track.setFixedHeight(120)
+            track.setStyleSheet("background: #1e2130; border-radius: 6px;")
+            track_lay = QVBoxLayout(track)
+            track_lay.setContentsMargins(0, 0, 0, 0)
+            track_lay.setAlignment(Qt.AlignmentFlag.AlignBottom)
+            
+            # Gerçek veri barı (mavi dolgu)
+            bar = QFrame()
+            bar.setFixedWidth(12)
+            bar.setFixedHeight(20) # Başlangıçta kısa, veriyle uzayacak
+            bar.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #00e5a0, stop:1 #0099ff); border-radius: 6px;")
+            
+            self.daily_bars[day] = bar # Referansı kaydet
+            track_lay.addWidget(bar)
+            
+            lbl = QLabel(day)
+            lbl.setStyleSheet("color: #6b7280; font-size: 10px; font-weight: bold; border: none; margin-top: 8px;")
+            
+            day_box.addWidget(track, alignment=Qt.AlignmentFlag.AlignCenter)
+            day_box.addWidget(lbl, alignment=Qt.AlignmentFlag.AlignCenter)
+            chart_lay.addLayout(day_box)
+            
+        s_lay.addLayout(chart_lay)
+        layout.addWidget(summary_frame)
+        
+    def _add_risk_analysis_ui(self, parent_layout):
+        """SRS 3.2.8.4: Akademik Başarı Tahminleme Panelini Dashboard'a ekler."""
+        
+        # Ana Konteynır
+        risk_card = QFrame()
+        risk_card.setStyleSheet("""
+            QFrame {
+                background: #111318;
+                border: 1px solid #1e2130;
+                border-radius: 16px;
+                margin-top: 10px;
+            }
+        """)
+        risk_vbox = QVBoxLayout(risk_card)
+        risk_vbox.setContentsMargins(20, 18, 20, 18)
+        
+        # Başlık ve İkon
+        title_row = QHBoxLayout()
+        title_lbl = QLabel("🎯 AKADEMİK RİSK VE HEDEF ANALİZİ (AI)")
+        title_lbl.setStyleSheet("color: #6b7280; font-weight: bold; font-size: 11px; letter-spacing: 1px; border: none;")
+        title_row.addWidget(title_lbl)
+        title_row.addStretch()
+        risk_vbox.addLayout(title_row)
+        risk_vbox.addSpacing(10)
+
+        # db_manager'dan verileri çekiyoruz
+        success, analysis_data = self.db_manager.get_course_risk_analysis(self.user_id)
+        
+        if success and analysis_data:
+            for item in analysis_data:
+                course_row = QHBoxLayout()
+                
+                # Ders Adı
+                name_lbl = QLabel(item.get('course_name', item.get('name', 'Bilinmeyen Ders')))
+                name_lbl.setStyleSheet("color: #e4e6ed; font-size: 13px; font-weight: 500; border: none;")
+                
+                # Hedef ve Durum
+                target_lbl = QLabel(f"Hedef: {item['target']}")
+                target_lbl.setStyleSheet("color: #94a3b8; font-size: 11px; border: none;")
+                
+                status_lbl = QLabel(item['status'].upper())
+                status_lbl.setStyleSheet(f"color: {item['color']}; font-weight: bold; font-size: 11px; border: none;")
+                
+                course_row.addWidget(name_lbl)
+                course_row.addStretch()
+                course_row.addWidget(target_lbl)
+                course_row.addSpacing(25)
+                course_row.addWidget(status_lbl)
+                
+                risk_vbox.addLayout(course_row)
+                
+                # Ayırıcı çizgi (Son ders değilse)
+                if item != analysis_data[-1]:
+                    line = QFrame()
+                    line.setFrameShape(QFrame.Shape.HLine)
+                    line.setStyleSheet("background-color: #1e2130; max-height: 1px; border: none;")
+                    risk_vbox.addWidget(line)
+        else:
+            no_data = QLabel("Henüz analiz edilecek yeterli seans veya ders verisi bulunmuyor.")
+            no_data.setStyleSheet("color: #4b5563; font-style: italic; border: none;")
+            risk_vbox.addWidget(no_data)
+
+        parent_layout.addWidget(risk_card)
             
     def start_pdf_import(self):
         """Gelişmiş Regex ile PDF okuma ve Düzenleme Tablosu"""
@@ -225,7 +362,7 @@ class DashboardPage(QWidget):
             matches = re.findall(pattern, full_text)
             
             if not matches:
-                QMessageBox.warning(self, "Hata", "Ders formatı algılanamadı! Manuel girişe yönlendiriliyorsunuz.") [cite: 305]
+                QMessageBox.warning(self, "Hata", "Ders formatı algılanamadı! Manuel girişe yönlendiriliyorsunuz.") 
                 return
 
             # 2. Onay ve Düzenleme Diyaloğu 
@@ -272,8 +409,7 @@ class DashboardPage(QWidget):
                             c_diff = float(table.item(row, 2).text().replace(',', '.'))
                         except:
                             c_diff = 3.0 
-
-                        # Yunus'un metodunu çağırıyoruz
+                            
                         success, _ = self.db_manager.add_course(
                             user_id=self.user_id,
                             course_id=c_id,

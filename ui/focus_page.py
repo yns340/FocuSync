@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import numpy as np
 import os
 import sys
@@ -444,19 +446,38 @@ class FocusPage(QWidget):
     def _on_focus_changed(self, is_focused):
         self.is_user_focused = is_focused
         if not is_focused:
-            self.notif.show_warning("🔴", "Dikkat Dağıldı! Lütfen ekrana odaklanın.", "#ff6b35", 3000)
-            self._show_distraction_popup() # YENİ: Sesli Popup Göster
+            self.notif.show_warning("🔴", "Dikkat Dağıldı! Lütfen ekrana odaklanın.", "#ff6b35", 2000)
+            self._show_distraction_popup()
             self.current_violations += 1
         else:
-            self._hide_distraction_popup() # YENİ: Ekrana bakınca popup'ı kapat
+            self._hide_distraction_popup()
+            self.notif.setVisible(False)
 
     def _on_face_missing(self, is_missing):
+        """ Yüz tespiti kaybında sayacı duraklatır ve kullanıcıyı uyarır."""
         if is_missing:
+            # Kullanıcı odaklı değil olarak işaretlenir
             self.is_user_focused = False
-            self.notif.show_warning("⚠️", "Yüz bulunamadı! Lütfen kameraya görünün.", "#f59e0b", 3000)
+            
+            # Zamanlayıcı durdurulur (Pause)
+            if hasattr(self, '_timer') and self._timer.isActive():
+                self._timer.stop()
+                print("DEBUG: Yüz kayboldu, sayaç duraklatıldı.")
+            
+            # Görsel ve Sesli Uyarı 
+            self.notif.show_warning("⚠️", "Yüz tespiti kayboldu! Sayaç DURDURULDU.", "#f59e0b", 3000)
             self._show_distraction_popup()
         else:
+            # 1. Kullanıcı geri geldi
             self.is_user_focused = True
+            
+            #  Eğer seans aktifse sayacı devam ettirilir (Resume)
+            if self._session_active and hasattr(self, '_timer') and not self._timer.isActive():
+                self._timer.start(1000)
+                print("DEBUG: Yüz algılandı, sayaç devam ediyor.")
+                self.notif.show_warning("▶", "Hoş geldin! Odaklanmaya devam edebilirsin.", "#00e5a0", 2000)
+            
+            # 3. Uyarı kaldırılır
             self._hide_distraction_popup()
 
     def _on_error(self, msg):
@@ -488,6 +509,7 @@ class FocusPage(QWidget):
             self.notif.show_warning("✅",f"Seans tamamlandı! Veritabanına kaydedildi. Skor: %{score}", "#00e5a0", 6000)
         except Exception as e:
             QMessageBox.critical(self, "Bağlantı Hatası", f"Veritabanına bağlanılamadı! İnternet bağlantınızı kontrol edin.\n\nDetay: {str(e)}")
+
 
     def _tick(self):
         if not self._session_active:
@@ -541,22 +563,22 @@ class FocusPage(QWidget):
         self._load_courses()
         
     def on_session_finished_with_ai(self, session_data):
-        """SRS 3.2.7.1: AI seans sonu analizi ve ders zorluğu güncellemesi."""
+        """ AI seans sonu analizi ve ders zorluğu güncellemesi."""
         try:
             if self.tracker:
                 self.tracker.is_running = False
 
-            # Gerekli verileri hazırla
+            # Gerekli verilerin hazırlanması
             score = session_data.get("focus_score", 0)
             violations = self.current_violations
             current_work = self.work_spin.value()
             current_break = self.break_spin.value()
             selected_course_id = self.course_combo.currentData()
             
-            # Verimsizlik Enerjisi Hesabı
-            energy = (100 - score) + (violations * 8) 
+            # Verimsizlik Enerjisi Hesabı (Hata ve Odak Kaybı Ağırlıklı)
+            energy = (100 - score) + (violations * 4)
             
-            ai_reports = [] # Bildirimleri burada toplayacağız
+            ai_reports = [] 
             
             # 1. SÜRE OPTİMİZASYONU (Simulated Annealing Mantığı)
             if energy > 45: # Performans düşük, mola artmalı
@@ -571,19 +593,22 @@ class FocusPage(QWidget):
                 new_work, new_break = current_work, current_break
                 ai_reports.append("• Odaklanma düzeyin gayet dengeli, mevcut program korunuyor.")
 
-            # 2. DERS ZORLUĞU ÖĞRENME 
+            # 2. DERS ZORLUĞU ÖĞRENME (ADG-REQ-02)
+            # Veritabanı yanıtları kontrol edilerek rapor güncellenir
             if energy > 65:
-                self.db_manager.update_course_difficulty(self.user_id, selected_course_id, "increase")
-                ai_reports.append("• Bu derste çok zorlandığını fark ettim; ders zorluk seviyesi artırıldı. GA bir sonraki planlamada bu dersi daha verimli saatlerine koyacak.")
+                success, _ = self.db_manager.update_course_difficulty(self.user_id, selected_course_id, "increase")
+                if success:
+                    ai_reports.append("• Bu derste çok zorlandığını fark ettim; ders zorluk seviyesi artırıldı. GA bir sonraki planlamada bu dersi daha verimli saatlerine koyacak.")
             elif energy < 10:
-                self.db_manager.update_course_difficulty(self.user_id, selected_course_id, "decrease")
-                ai_reports.append("• Bu dersi kolaylıkla hallediyorsun; ders zorluk seviyesi optimize edildi.")
+                success, _ = self.db_manager.update_course_difficulty(self.user_id, selected_course_id, "decrease")
+                if success:
+                    ai_reports.append("• Bu dersi kolaylıkla hallediyorsun; ders zorluk seviyesi optimize edildi.")
 
-            # Arayüzü güncelle
+            # Arayüzü (SpinBox'ları) güncellenir
             self.work_spin.setValue(max(15, min(new_work, 60)))
             self.break_spin.setValue(max(5, min(new_break, 30)))
             
-            # 3. SONUÇ PENCERESİ 
+            # 3. SONUÇ PENCERESİ (Geri Bildirim)
             final_report = "\n\n".join(ai_reports)
             msg = QMessageBox(self)
             msg.setWindowTitle("🤖 AI Seans Analizi")
@@ -592,35 +617,63 @@ class FocusPage(QWidget):
             msg.setStyleSheet("QLabel{ min-width: 400px; color: #e4e6ed; } QPushButton{ width: 80px; }")
             msg.exec()
             
-            # Verileri DB'ye kaydet ve sıfırla
+            # Verileri DB'ye kaydedilmesi ve seansı sıfırlanması
             self._on_session_completed(session_data)
             self.current_violations = 0
             
         except Exception as e:
             print(f"AI Bildirim Hatası: {e}")
+            # Hata olsa bile ana kayıt fonksiyonu çağırılarak veri kaybı önlenir
             self._on_session_completed(session_data)
             
     def _load_recommended_plan(self):
+        """SRS 3.2.7: SA algoritması ile gerçek veritabanı verilerini kullanarak plan üretir ve buluta kaydeder."""
+        optimal_plan = None # Fonksiyon kapsamı için başlangıç değeri
         try:
-            # Örnek veriler (İleride db_manager üzerinden gerçek verileri çekeceğiz)
-            history = {"09:00": 90, "11:00": 75, "15:00": 60} 
-            courses = ["BM314 Yazılım Mühendisliği", "BM312 Mikroişlemciler"]
+            # 1. Kullanıcın Aktif Dersleri Çekilir
+            success_c, courses_data = self.db_manager.get_courses(self.user_id)
+            if not success_c or not courses_data:
+                self.session_combo.addItem("Ders bulunamadı", "error")
+                return
+
+            # Sadece aktif ve ismi olan dersler filtrelenir
+            active_courses = [f"{c['course_id']} {c['course_name']}" for c in courses_data if c.get('is_active')]
+
+            # 2. Gerçek Seans Geçmişi Çekilir
+            success_h, history_data = self.db_manager.get_weekly_analysis(self.user_id)
             
+            # Eğer geçmiş veri yoksa, varsayılan bir başlangıç profili atanır
+            focus_history = history_data if success_h else {"09:00": 50, "11:00": 50, "15:00": 50, "17:00": 50, "20:00": 50}
+
+            # 3. 🔥 Simulated Annealing (Benzetimli Tavlama) Motoru Çalıştırılır
+            from decision_engine import SimulatedAnnealingScheduler
+            scheduler = SimulatedAnnealingScheduler(active_courses, focus_history)
+            optimal_plan = scheduler.generate_plan()
             
-            from decision_engine import GeneticScheduler
-            scheduler = GeneticScheduler(courses, history)
-            optimal_plan = scheduler.generate_optimal_plan()
-            
-            # ComboBox'ı temizle ve yeni planı doldur
+            # 4. Arayüz (ComboBox) Güncellenir
             self.session_combo.clear()
+            if not optimal_plan:
+                self.session_combo.addItem("Uygun plan üretilemedi", "none")
+                return
+
             for time, course in optimal_plan.items():
                 session_text = f"{time} - {course}"
-                # Yunus'un beklediği benzersiz session_id'yi yaratıyoruz
+                # Yunus'un beklediği formatta ID oluşturulur
                 session_id = f"sess_{time.replace(':', '')}" 
                 self.session_combo.addItem(session_text, session_id)
                 
+            print(f"DEBUG: SA motoruyla {len(optimal_plan)} adet optimize edilmiş seans yüklendi.")
+
+            # 5. Plan buluta gönderilir (SRS 3.2.8.3)
+            self.db_manager.save_study_plan(
+                user_id=self.user_id,
+                plan_start_date=datetime.now().strftime("%Y-%m-%d"),
+                weekly_sessions=optimal_plan
+            )
+
         except Exception as e:
             print(f"Plan yükleme hatası: {e}")
+            self.session_combo.addItem("Plan yüklenemedi", "error")
 
     def cleanup(self):
         self._timer.stop()

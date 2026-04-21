@@ -1,3 +1,4 @@
+import datetime
 import re
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -571,3 +572,90 @@ class DatabaseManager:
             return True, "Silinecek eski bir takvim bulunamadı."
         except Exception as e:
             return False, f"Takvim silme hatası: {str(e)}"
+    
+    def get_weekly_analysis(self, user_id):
+        from datetime import datetime, timedelta, timezone
+        try:
+            #  Zaman aralığı 'timezone aware' yaparak belirlenir
+            now = datetime.now(timezone.utc)
+            start_date = now - timedelta(days=7)
+            
+            #  FocusSessions koleksiyonundan çekilir
+            sessions = self.db.collection("FocusSessions")\
+                .where("user_id", "==", user_id)\
+                .where("timestamp", ">=", start_date).stream()
+                
+            weekly_stats = {"Pzt": 0, "Sal": 0, "Çar": 0, "Per": 0, "Cum": 0, "Cmt": 0, "Paz": 0}
+            counts = weekly_stats.copy()
+            day_map = {0: "Pzt", 1: "Sal", 2: "Çar", 3: "Per", 4: "Cum", 5: "Cmt", 6: "Paz"}
+            
+            found_any = False
+            for doc in sessions:
+                found_any = True
+                data = doc.to_dict()
+                dt = data.get("timestamp")
+                score = data.get("focus_score", 0)
+                
+                if dt:
+                    # Firestore timestamp'i yerel saate çevirerek gün bulunur
+                    local_dt = dt.astimezone() 
+                    day_name = day_map[local_dt.weekday()]
+                    weekly_stats[day_name] += score
+                    counts[day_name] += 1
+            
+            print(f"DEBUG: Seans bulundu mu? {found_any}") # Konsoldan kontrol edilir
+
+            final_data = {}
+            for day in weekly_stats:
+                if counts[day] > 0:
+                    final_data[day] = int(weekly_stats[day] / counts[day])
+                else:
+                    final_data[day] = 0
+                    
+            return True, final_data
+        except Exception as e:
+            print(f"HATA: {e}")
+            return False, str(e)
+    def get_course_risk_analysis(self, user_id):
+        """SRS 3.2.8.4: Ders bazlı hedef not ve performans risk analizi yapar."""
+        try:
+            # 1. Kullanıcının aktif derslerini çek
+            success_c, courses = self.get_courses(user_id)
+            # 2. Haftalık odak istatistiklerini çek
+            success_h, focus_stats = self.get_weekly_analysis(user_id) 
+            
+            if not success_c: return False, "Dersler alınamadı."
+            
+            # Tüm odaklanma geçmişinin genel ortalamasını bul
+            general_avg_focus = sum(focus_stats.values()) / 7 if focus_stats else 50
+            
+            analysis_results = []
+            for course in courses:
+                if not course.get("is_active"): continue
+                
+                target = course.get("target_grade", 60) # Kullanıcının belirlediği hedef
+                
+                # RİSK HESABI: Hedef yüksek ama odaklanma genel ortalaması düşükse risk artar
+                # Bu formül SRS 3.2.7'deki verimsizlik enerjisiyle paralel çalışır.
+                risk_score = (target / 100) * (100 - general_avg_focus)
+                
+                status = "Güvenli"
+                color = "#00e5a0" # Yeşil
+                if risk_score > 40:
+                    status = "Yüksek Risk"
+                    color = "#ff6b35" # Turuncu/Kırmızı
+                elif risk_score > 25:
+                    status = "Dikkat"
+                    color = "#f59e0b" # Sarı
+                
+                analysis_results.append({
+                    "name": course.get("course_name"),      
+                    "course_name": course.get("course_name"), 
+                    "target": target,
+                    "status": status,
+                    "color": color
+                })
+            return True, analysis_results
+        except Exception as e:
+            print(f"Risk Analiz Hatası: {e}")
+            return False, str(e)
