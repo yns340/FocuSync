@@ -1,0 +1,40 @@
+
+--- 2026-05-12 13:14:36.810610 ---
+Traceback (most recent call last):
+  File "C:\Users\ymcze\Downloads\FocuSync-feature-adaptive-ai-engine\head_tracker.py", line 55, in run
+    options = FaceLandmarkerOptions(
+        base_options=BaseOptions(
+    ...<8 lines>...
+        min_tracking_confidence=0.5,
+    )
+TypeError: FaceLandmarkerOptions.__init__() got an unexpected keyword argument 'output_face_transformation_matrixes'. Did you mean 'output_facial_transformation_matrixes'?
+
+--- 2026-05-12 13:14:56.787669 ---
+Traceback (most recent call last):
+  File "C:\Users\ymcze\Downloads\FocuSync-feature-adaptive-ai-engine\whitelist_functionality.py", line 321, in run
+    print(f"[FG DEBUG] exe={exe_name!r} | title={window_title!r}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ymcze\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1254.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f916' in position 37: character maps to <undefined>
+
+--- 2026-05-12 13:15:00.796700 ---
+Traceback (most recent call last):
+  File "C:\Users\ymcze\Downloads\FocuSync-feature-adaptive-ai-engine\head_tracker.py", line 55, in run
+    options = FaceLandmarkerOptions(
+        base_options=BaseOptions(
+    ...<8 lines>...
+        min_tracking_confidence=0.5,
+    )
+TypeError: FaceLandmarkerOptions.__init__() got an unexpected keyword argument 'output_face_transformation_matrixes'. Did you mean 'output_facial_transformation_matrixes'?
+
+--- 2026-05-12 13:15:04.374024 ---
+Traceback (most recent call last):
+  File "C:\Users\ymcze\Downloads\FocuSync-feature-adaptive-ai-engine\whitelist_functionality.py", line 321, in run
+    print(f"[FG DEBUG] exe={exe_name!r} | title={window_title!r}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ymcze\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1254.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f916' in position 37: character maps to <undefined>

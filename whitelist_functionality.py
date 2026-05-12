@@ -318,7 +318,12 @@ class MonitorWorker(QThread):
             current_fg = (exe_name, window_title)
 
             if (exe_name or window_title) and current_fg != self._last_fg_debug:
-                print(f"[FG DEBUG] exe={exe_name!r} | title={window_title!r}")
+                # 🔥 Unicode hatasını önlemek için güvenli yazdırma (özellikle Windows konsolunda emoji varsa)
+                try:
+                    print(f"[FG DEBUG] exe={exe_name!r} | title={window_title!r}")
+                except UnicodeEncodeError:
+                    safe_title = window_title.encode('ascii', 'backslashreplace').decode('ascii')
+                    print(f"[FG DEBUG] exe={exe_name!r} | title={safe_title!r}")
                 self._last_fg_debug = current_fg
 
             if not exe_name:
