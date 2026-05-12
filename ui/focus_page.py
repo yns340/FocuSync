@@ -411,8 +411,13 @@ class FocusPage(QWidget):
         if self.tracker:
             try:
                 self.tracker.is_running = False
-                self.tracker.wait(500)
-            except: pass
+                if self.tracker.isRunning():
+                    self.tracker.quit()
+                    self.tracker.wait(300)
+                
+            except Exception: 
+                pass
+            self.tracker = None
             
         self.tracker = HeadTracker()
         self.tracker.session_completed.connect(self.on_session_finished_with_ai)

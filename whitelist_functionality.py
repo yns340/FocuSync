@@ -353,7 +353,8 @@ class MonitorWorker(QThread):
                 elapsed += 200
     def stop(self):
         self._running = False
-        self.wait()
+        self.quit()
+        self.wait(1000)  # Süresiz wait() yerine max 1sn
 
 
 class WhitelistLogic:
