@@ -251,4 +251,4 @@ class HeadTracker(QThread):
         # Sinyali fırlat
         self.session_completed.emit(session_data)
         
-        self.wait()
+        #self.wait() main thread'i bloklıyordu
