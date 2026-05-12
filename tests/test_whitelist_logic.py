@@ -479,14 +479,15 @@ def test_monitor_worker_stop_sets_running_false_and_waits(monkeypatch):
     worker = MonitorWorker(lambda: set(), interval_ms=1)
     calls = []
 
-    monkeypatch.setattr(MonitorWorker, "wait", lambda self: calls.append("wait"))
+    monkeypatch.setattr(MonitorWorker, "quit", lambda self: calls.append("quit"))
+    monkeypatch.setattr(MonitorWorker, "wait", lambda self, timeout=None: calls.append(("wait", timeout)))
+
     worker._running = True
 
     worker.stop()
 
     assert worker._running is False
-    assert calls == ["wait"]
-
+    assert calls == ["quit", ("wait", 1000)]
 
 # -----------------------------------------------------------------------------
 # WhitelistLogic behavior
