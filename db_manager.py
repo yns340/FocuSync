@@ -1,0 +1,918 @@
+import datetime
+import re
+import hashlib
+import hmac
+import secrets
+import firebase_admin
+from firebase_admin import credentials, firestore
+from decision_engine import DecisionEngine
+
+class DatabaseManager:
+    def __init__(self, key_path="serviceAccountKey.json"):
+        # Firebase uygulamasının birden fazla kez başlatılmasını engelle
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(key_path)
+            firebase_admin.initialize_app(cred)
+        
+        self.db = firestore.client()
+        self._prepared_focus_session_id = None
+        self._last_focus_session_id = None
+
+    # SDD §3.7.1 — PBKDF2-HMAC-SHA256 tabanlı şifre hashleme
+    def _hash_password(self, password: str, salt: str | None = None):
+        """
+        SDD §3.7.1: PBKDF2 (Password-Based Key Derivation Function 2)
+        algoritması HMAC-SHA256 hash fonksiyonu ile birlikte kullanılır.
+        """
+        if not salt:
+            # 32 karakterlik (16 byte) kriptografik olarak güvenli tuz
+            salt = secrets.token_hex(16)
+
+        # PBKDF2-HMAC-SHA256 — kaba kuvvet saldırılarına karşı dirençli
+        pwd_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            salt.encode('utf-8'),
+            iterations=260_000,   # NIST 2023 önerisi
+        ).hex()
+        return pwd_hash, salt
+
+    
+    def prepare_focus_session_id(self):
+        """
+        Yeni bir focus session için önceden benzersiz document id üretir.
+        """
+        doc_ref = self.db.collection("FocusSessions").document()
+        self._prepared_focus_session_id = doc_ref.id
+        return self._prepared_focus_session_id
+
+    def get_last_focus_session_id(self):
+        return self._last_focus_session_id
+
+    # ==========================================
+    # KULLANICI PROFİLİ FONKSİYONLARI (WRITE & READ & UPDATE)
+    # ==========================================
+    
+    def _is_valid_email(self, email):
+        """E-posta formatının geçerli olup olmadığını RegEx ile kontrol eder."""
+        regex_pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+        return re.match(regex_pattern, email) is not None
+
+    def login_user(self, email, password):
+        if not email.strip() or not password.strip():
+            return False, "Hata: E-posta ve şifre alanları boş bırakılamaz!"
+
+        if not self._is_valid_email(email):
+            return False, "Hata: Geçersiz e-posta formatı!"
+
+        try:
+            users_ref = self.db.collection("Users")
+            # Önce kullanıcıyı bulup salt ve hash bilgisini alıyoruz
+            query = users_ref.where("email", "==", email.lower()).limit(1).get()
+            
+            if query:
+                user_doc = query[0]
+                user_data = user_doc.to_dict()
+                stored_hash = user_data.get("password")
+                stored_salt = user_data.get("salt")
+                
+                if stored_salt:
+                    # Girilen şifreyi kullanıcının tuzuyla hashleyip karşılaştırıyoruz
+                    calculated_hash, _ = self._hash_password(password, stored_salt)
+                    if calculated_hash == stored_hash:
+                        return True, user_doc.id
+                else:
+                    # Geçiş aşaması: Eğer DB'de salt yoksa (eski kayıtlar) düz metin kontrolü yap
+                    if password == stored_hash:
+                        return True, user_doc.id
+                
+                return False, "E-posta veya şifre hatalı."
+            else:
+                return False, "Bu e-posta adresi ile kayıtlı kullanıcı bulunamadı."
+        except Exception as e:
+            return False, f"Sorgu hatası: {str(e)}"
+    
+    def register_user(self, email, password):
+        """Yeni bir kullanıcıyı 'Users' koleksiyonuna şema formatında ekler."""
+        if not email.strip() or not password.strip():
+            return False, "Hata: E-posta ve şifre alanları boş bırakılamaz!"
+
+        if not self._is_valid_email(email):
+            return False, "Hata: Lütfen geçerli bir e-posta adresi girin!"
+
+        try:
+            users_ref = self.db.collection("Users")
+            
+            existing_users = users_ref.where("email", "==", email).stream()
+            for user in existing_users:
+                return False, "Hata: Bu e-posta adresi zaten sisteme kayıtlı!"
+
+            # Şifreyi PBKDF2 ile tuzla ve hashle (SDD §3.7.1)
+            hashed_pwd, salt = self._hash_password(password)
+
+            doc_ref = self.db.collection("Users").document()
+            doc_ref.set({
+                "email"       : email,
+                "password"    : hashed_pwd,   # PBKDF2 ile hashlenmiş
+                "salt"        : salt,          # Kullanıcıya özel tuz
+                "role"        : "User",
+                "name"        : "",
+                "surname"     : "",
+                "school"      : "",
+                "allowed_apps": [],            # WL-REQ-01 / SDD §5.10.3
+            })
+            return True, "Kullanıcı başarıyla kaydedildi."
+        except Exception as e:
+            return False, f"Kayıt hatası: {str(e)}"
+
+    def get_user_profile(self, user_id):
+        """Belirtilen user_id'ye ait tüm kullanıcı bilgilerini okur."""
+        try:
+            doc_ref = self.db.collection("Users").document(user_id)
+            doc = doc_ref.get()
+            if doc.exists:
+                return True, doc.to_dict()
+            else:
+                return False, "Kullanıcı bulunamadı."
+        except Exception as e:
+            return False, f"Profil okuma hatası: {str(e)}"
+
+    def update_user_profile(self, user_id, name, surname, school, new_password=None):
+        try:
+            doc_ref = self.db.collection("Users").document(user_id)
+            update_data = {
+                "name": name,
+                "surname": surname,
+                "school": school
+            }
+            
+            # Eğer yeni şifre alanı doluysa şifreyi ve tuzu güncelle
+            if new_password and new_password.strip():
+                hashed_pwd, salt = self._hash_password(new_password)
+                update_data["password"] = hashed_pwd
+                update_data["salt"] = salt
+                
+            doc_ref.update(update_data) 
+            return True, "Profil ayarları başarıyla kaydedildi."
+        except Exception as e:
+            return False, f"Profil güncelleme hatası: {str(e)}"
+
+    def get_dashboard_stats(self, user_id):
+        """SRS 3.2.8: Yunus'un FocusSessions tablosundan gerçek verileri çeker."""
+        try:
+            stats = {
+                "user_name": "",
+                "course_count": 0,
+                "avg_focus_score": 0,
+                "total_study_time": 0,
+                "violation_count": 0
+            }
+
+            # 1. Kullanıcı Adı
+            user_doc = self.db.collection("Users").document(user_id).get()
+            if user_doc.exists:
+                stats["user_name"] = user_doc.to_dict().get("name", "")
+
+            # 2. Aktif Ders Sayısı
+            courses = self.db.collection("Courses").where("user_id", "==", user_id).where("is_active", "==", True).stream()
+            stats["course_count"] = sum(1 for _ in courses)
+
+            # 3. İhlal Sayısı (WhitelistSessions tablosundan toplam ihlaller)
+            wl_sessions = self.db.collection("WhitelistSessions").where("user_id", "==", user_id).stream()
+            stats["violation_count"] = sum(s.to_dict().get("violation_count", 0) for s in wl_sessions)
+
+            # 4. Ortalama Odak ve Toplam Süre (Yunus'un beklediği tablo)
+            sessions = self.db.collection("FocusSessions").where("user_id", "==", user_id).stream()
+            total_score, session_count = 0, 0
+            
+            for session in sessions:
+                data = session.to_dict()
+                stats["total_study_time"] += data.get("actual_focus_time", 0)
+                total_score += data.get("focus_score", 0)
+                session_count += 1
+                
+            if session_count > 0:
+                stats["avg_focus_score"] = round(total_score / session_count, 1)
+
+            return True, stats
+        except Exception as e:
+            return False, f"Hata: {str(e)}"
+
+    # ==========================================
+    # PROJE MİMARİSİ FONKSİYONLARI (FocuSync SPMP)
+    # ==========================================
+
+    def add_course(self, user_id, course_id, course_name, difficulty_level, weekly_hours, exam_date=None, is_active=True, target_grade=0, exam_weights=None):
+        """
+        Courses (Ana Tablo): Yeni bir ders oluşturur veya günceller.
+        COMPOSITE KEY KULLANILIR (user_id + course_id) Çakışmaları önlemek için!
+        """
+        try:
+            unique_doc_id = f"{user_id}_{course_id}"
+            doc_ref = self.db.collection("Courses").document(unique_doc_id)
+            
+            update_data = {
+                "user_id": user_id,
+                "course_id": course_id, 
+                "course_name": course_name,
+                "difficulty_level": float(difficulty_level),
+                "weekly_hours": int(weekly_hours),
+                "is_active": is_active,
+                "target_grade": int(target_grade)
+            }
+            
+            # Tarih None değilse güncelle (eski veriyi silmemek için)
+            if exam_date is not None:
+                update_data["exam_date"] = exam_date
+                
+            # Sınav ağırlıkları sözlüğü gelmişse güncelle
+            if exam_weights is not None:
+                update_data["exam_weights"] = exam_weights
+
+            # Merge=True sayesinde, dokümanda var olan exam_grades gibi diğer alanlar SİLİNMEZ!
+            doc_ref.set(update_data, merge=True) 
+
+            # CASCADE UPDATE: Programdaki (Schedules) ismi de güncelle
+            schedules = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
+            for schedule in schedules:
+                sched_data = schedule.to_dict()
+                routine = sched_data.get("weekly_routine", {})
+                updated = False
+                for day, courses in routine.items():
+                    for c in courses:
+                        if c.get("course_id") == course_id and c.get("course_name") != course_name:
+                            c["course_name"] = course_name
+                            updated = True
+                if updated:
+                    schedule.reference.update({"weekly_routine": routine})
+
+            return True, "Ders başarıyla kaydedildi/güncellendi."
+        except Exception as e:
+            return False, f"Ders kaydetme hatası: {str(e)}"
+
+    def save_full_schedule(self, user_id, schedule_name, weekly_routine, course_hours_dict):
+        """
+        Eski programı siler, dersleri (Courses) akıllıca günceller/ekler (is_active mantığı ile) 
+        ve yeni programı (Schedules) kaydeder.
+        """
+        try:
+            # 1. Eski programı temizle
+            self.delete_schedule(user_id)
+
+            # 2. Kullanıcının MEVCUT tüm derslerini bul
+            existing_courses_ref = self.db.collection("Courses").where("user_id", "==", user_id).stream()
+            existing_course_ids = [doc.to_dict().get("course_id") for doc in existing_courses_ref]
+
+            # 3. Courses tablosunu güncelle (Upsert Mantığı)
+            for c_id, c_info in course_hours_dict.items():
+                unique_doc_id = f"{user_id}_{c_id}"
+                doc_ref = self.db.collection("Courses").document(unique_doc_id)
+                
+                if c_id in existing_course_ids:
+                    # Ders veritabanında zaten varsa ismini, saatini güncelle ve AKTİF yap
+                    doc_ref.update({
+                        "course_name": c_info["name"],
+                        "weekly_hours": c_info["hours"],
+                        "is_active": True
+                    })
+                    existing_course_ids.remove(c_id)
+                else:
+                    # Ders ilk defa ekleniyorsa sıfırdan oluştur ve AKTİF yap
+                    doc_ref.set({
+                        "user_id": user_id,
+                        "course_id": c_id,
+                        "course_name": c_info["name"],
+                        "difficulty_level": 3.0, 
+                        "weekly_hours": c_info["hours"],
+                        "exam_date": None,
+                        "is_active": True
+                    })
+
+            # 4. Programda OLMAYAN eski dersleri PASİFE ÇEK (Soft Delete)
+            for old_c_id in existing_course_ids:
+                old_unique_id = f"{user_id}_{old_c_id}"
+                self.db.collection("Courses").document(old_unique_id).update({
+                    "is_active": False
+                })
+
+            # 5. Yeni haftalık programı kaydet
+            self.db.collection("Schedules").add({
+                "user_id": user_id,
+                "schedule_name": schedule_name,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+                "weekly_routine": weekly_routine
+            })
+            return True, "Ders programı başarıyla kaydedildi, eski dersler arşive alındı."
+        except Exception as e:
+            return False, f"Program kaydetme hatası: {str(e)}"
+
+
+    def save_study_plan(self, user_id, plan_start_date, weekly_sessions):
+        """
+        StudyPlans: Zeynep'in algoritmasının ürettiği 7 günlük çalışma planını kaydeder.
+        """
+        try:
+            self.db.collection("StudyPlans").add({
+                "user_id": user_id,
+                "plan_start_date": plan_start_date,
+                "weekly_sessions": weekly_sessions
+            })
+            return True, "Akıllı çalışma planı oluşturuldu."
+        except Exception as e:
+            return False, f"Plan oluşturma hatası: {str(e)}"
+
+    def add_focus_session(self, user_id, study_plan_session_id, course_id, actual_focus_time, head_tilt_degree, focus_score, status):
+        """
+        FocusSessions: Akif'in kamera sisteminden gelen GERÇEKLEŞEN odaklanma raporunu kaydeder.
+        """
+        try:
+            focus_session_id = self._prepared_focus_session_id
+
+            if not focus_session_id:
+                doc_ref = self.db.collection("FocusSessions").document()
+                focus_session_id = doc_ref.id
+            else:
+                doc_ref = self.db.collection("FocusSessions").document(focus_session_id)
+
+            doc_ref.set({
+                
+                "user_id": user_id,
+                "study_plan_session_id": study_plan_session_id,
+                "course_id": course_id,
+                "actual_focus_time": int(actual_focus_time),
+                "head_tilt_degree": float(head_tilt_degree),
+                "focus_score": float(focus_score),
+                "status": status,
+                "timestamp": firestore.SERVER_TIMESTAMP
+            })
+
+            self._last_focus_session_id = focus_session_id
+            self._prepared_focus_session_id = None
+
+            return True, "Odaklanma seansı kaydedildi."
+        except Exception as e:
+            return False, f"Seans ekleme hatası: {str(e)}"
+
+
+    def save_whitelist_session(
+        self,
+        user_id: str,
+        violations: list[dict],
+        total_duration: int,
+        violation_duration: int,
+        total_duration_hms: str,
+        violation_duration_hms: str,
+        session_started_at=None,
+        session_ended_at=None,
+        focus_session_id: str | None = None
+    ):
+        """
+        WhitelistSessions:
+        Bir whitelist izleme seansının tüm verisini tek dökümanda kaydeder.
+        """
+        try:
+            self.db.collection("WhitelistSessions").add({
+                "user_id": user_id,
+                "focus_session_id": focus_session_id,
+
+                # ham saniye
+                "total_duration_seconds": int(total_duration),
+                "violation_duration_seconds": int(violation_duration),
+
+                # okunabilir format
+                "total_duration_hms": total_duration_hms,
+                "violation_duration_hms": violation_duration_hms,
+
+                "violation_count": len(violations),
+                "violations": violations,
+
+                "session_started_at": session_started_at,
+                "session_ended_at": session_ended_at,
+                "saved_at": firestore.SERVER_TIMESTAMP
+            })
+            return True, "Whitelist seansı kaydedildi."
+        except Exception as e:
+            return False, f"Whitelist seans kayıt hatası: {str(e)}"
+
+    # ==========================================
+    # GET (OKUMA) FONKSİYONLARI
+    # ==========================================
+
+    def get_courses(self, user_id):
+        """Kullanıcının tüm derslerini getirir."""
+        try:
+            courses = []
+            docs = self.db.collection("Courses").where("user_id", "==", user_id).stream()
+            for doc in docs:
+                data = doc.to_dict()
+                courses.append(data)
+            return True, courses
+        except Exception as e:
+            return False, f"Dersleri okuma hatası: {str(e)}"
+
+    def get_schedule(self, user_id):
+        """Kullanıcının mevcut haftalık programını getirir."""
+        try:
+            docs = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
+            for doc in docs:
+                return True, doc.to_dict() 
+            return False, "Kayıtlı bir ders programı bulunamadı."
+        except Exception as e:
+            return False, f"Program okuma hatası: {str(e)}"
+
+    def get_schedule_course_ids(self, user_id):
+        """Kullanıcının aktif haftalık programındaki benzersiz ders ID'lerini döndürür."""
+        try:
+            schedules = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
+            course_ids = set()
+            for schedule in schedules:
+                routine = schedule.to_dict().get("weekly_routine", {})
+                for day, courses in routine.items():
+                    for c in courses:
+                        course_ids.add(c.get("course_id"))
+            return True, list(course_ids)
+        except Exception as e:
+            return False, []
+
+    def get_study_plan(self, user_id):
+        """Kullanıcının güncel akıllı çalışma planını getirir."""
+        try:
+            docs = self.db.collection("StudyPlans").where("user_id", "==", user_id).stream()
+            plans = [doc.to_dict() for doc in docs]
+            if plans:
+                return True, plans[-1] 
+            return False, "Aktif bir çalışma planı bulunamadı."
+        except Exception as e:
+            return False, f"Plan okuma hatası: {str(e)}"
+
+    # ==========================================
+    # DELETE (SİLME) FONKSİYONU
+    # ==========================================
+
+    def delete_schedule(self, user_id):
+        """Kullanıcının mevcut ders programını siler ve içindeki dersleri arşive (pasife) çeker."""
+        try:
+            docs = self.db.collection("Schedules").where("user_id", "==", user_id).stream()
+            deleted_count = 0
+            for doc in docs:
+                data = doc.to_dict()
+                routine = data.get("weekly_routine", {})
+                
+                # 1. Programdaki derslerin ID'lerini topla
+                course_ids = set()
+                for day, courses in routine.items():
+                    for c in courses:
+                        if "course_id" in c:
+                            course_ids.add(c["course_id"])
+                
+                # 2. Bu dersleri Courses tablosunda is_active = False (Pasif) yap
+                for cid in course_ids:
+                    try:
+                        unique_id = f"{user_id}_{cid}" # Composite Key Kullan
+                        self.db.collection("Courses").document(unique_id).update({"is_active": False})
+                    except Exception:
+                        pass # Eğer ders daha önceden manuel silinmişse hata vermesin
+                        
+                # 3. Programı kalıcı olarak sil
+                doc.reference.delete()
+                deleted_count += 1
+            
+            if deleted_count > 0:
+                return True, "Ders programı silindi ve içindeki dersler arşive alındı."
+            return True, "Silinecek eski bir program bulunamadı."
+        except Exception as e:
+            return False, f"Program silme hatası: {str(e)}"
+    
+    def delete_course(self, user_id, course_id):
+        """Kullanıcının seçtiği tekil bir dersi veritabanından kalıcı olarak siler."""
+        try:
+            unique_doc_id = f"{user_id}_{course_id}"
+            doc_ref = self.db.collection("Courses").document(unique_doc_id)
+            doc = doc_ref.get()
+            
+            if doc.exists and doc.to_dict().get("user_id") == user_id:
+                doc_ref.delete()
+                return True, "Ders başarıyla silindi."
+            return False, "Ders bulunamadı veya silme yetkiniz yok."
+        except Exception as e:
+            return False, f"Ders silme hatası: {str(e)}"
+
+    # ==========================================
+    # UPDATE (GÜNCELLEME) FONKSİYONLARI - ALGORİTMA İÇİN
+    # ==========================================
+
+    def update_course_difficulty(self, user_id, course_id, action):
+        """Seans sonucuna göre dersin zorluğunu otonom günceller."""
+        try:
+            unique_doc_id = f"{user_id}_{course_id}"
+            doc_ref = self.db.collection("Courses").document(unique_doc_id)
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                current_diff = doc.to_dict().get("difficulty_level", 3.0)
+                
+                if action == "increase":
+                    new_diff = min(5.0, current_diff + 0.5) # Max 5.0
+                else:
+                    new_diff = max(1.0, current_diff - 0.2) # Min 1.0
+                
+                doc_ref.update({"difficulty_level": float(new_diff)})
+                return True, "Zorluk güncellendi."
+            return False, "Ders bulunamadı."
+        except Exception as e:
+            return False, str(e)
+
+    def mark_session_completed(
+        self,
+        user_id: str,
+        day_name: str,
+        session_id: str,
+        course_id: str,
+        planned_duration: float,
+        actual_duration: float,
+        whitelist_violations: int = 0,   # ADG-REQ-02: artık gerçek ihlal sayısı geçiriliyor
+    ):
+        """
+        Seansı tamamlandı olarak işaretler ve Karar Motoru'nu (DecisionEngine) tetikler.
+        ADG-REQ-02: whitelist ihlal sayısı da zorluk güncellemesini etkiler.
+        """
+        try:
+            plan_ref = (
+                self.db.collection("StudyPlans")
+                .where("user_id", "==", user_id)
+                .limit(1)
+                .get()
+            )
+            if not plan_ref:
+                return False
+
+            doc          = plan_ref[0]
+            data         = doc.to_dict()
+            weekly_sessions = data.get("weekly_sessions", {})
+            day_sessions    = weekly_sessions.get(day_name, [])
+
+            updated = False
+            for session in day_sessions:
+                if session.get("session_id") == session_id:
+                    session["is_completed"] = True
+                    updated = True
+                    break
+
+            if updated:
+                self.db.collection("StudyPlans").document(doc.id).update({
+                    f"weekly_sessions.{day_name}": day_sessions
+                })
+
+                # ADG-REQ-01/02 — Karar Motorunu gerçek ihlal verisiyle tetikle
+                engine = DecisionEngine(self)
+                engine.evaluate_session_and_adapt(
+                    user_id, course_id,
+                    planned_duration, actual_duration,
+                    whitelist_violations,  # artık sabit 0 değil
+                )
+                return True
+            return False
+
+        except Exception as e:
+            print(f"Seans güncelleme/AI hatası: {e}")
+            return False
+    # ==========================================
+    # SINAV TAKVİMİ (EXAMS) FONKSİYONLARI
+    # ==========================================
+
+    def save_exam_schedule(self, user_id, exam_schedule_name, exams_list):
+        """Kullanıcının sınav takvimini kaydeder ve Courses tablosundaki tarih ve notları SENKRONİZE eder."""
+        try:
+            docs = self.db.collection("Exams").where("user_id", "==", user_id).stream()
+            exam_doc_ref = None
+            for doc in docs:
+                exam_doc_ref = doc.reference
+                break
+                
+            exam_data = {
+                "user_id": user_id,
+                "exam_schedule_name": exam_schedule_name,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+                "exams": exams_list
+            }
+
+            if exam_doc_ref:
+                exam_doc_ref.update(exam_data)
+            else:
+                self.db.collection("Exams").add(exam_data)
+
+            # --- KUSURSUZ SENKRONİZASYON (CASCADE SYNC) ---
+            # 1. Her ders için tarih ve notları toparla
+            course_updates = {}
+            for exam in exams_list:
+                c_id = exam.get("course_id")
+                if not c_id: continue
+                
+                e_date = exam.get("exam_date", "")
+                e_type = exam.get("exam_type", "Sınav")
+                e_grade = exam.get("exam_grade", "").strip()
+
+                if c_id not in course_updates:
+                    course_updates[c_id] = {"exam_date": e_date, "exam_grades": {}}
+                
+                if e_grade: # Sadece not girilmişse sözlüğe ekle
+                    course_updates[c_id]["exam_grades"][e_type] = e_grade
+
+            # 2. Kullanıcının tüm derslerini çek
+            courses_ref = self.db.collection("Courses").where("user_id", "==", user_id).stream()
+            user_courses = {doc.to_dict().get("course_id"): doc.reference for doc in courses_ref}
+
+            # 3. İlgili dersleri güncelle, listede olmayanların (silinenlerin) notlarını temizle
+            for c_id, doc_ref in user_courses.items():
+                if c_id in course_updates:
+                    doc_ref.update(course_updates[c_id])
+                else:
+                    # Ders artık sınav takviminde yoksa tarih ve notları sıfırla!
+                    doc_ref.update({"exam_date": "", "exam_grades": {}})
+
+            return True, "Sınav takvimi ve ders notları başarıyla senkronize edildi."
+        except Exception as e:
+            return False, f"Hata: {str(e)}"
+
+    def get_exam_schedule(self, user_id):
+        try:
+            docs = self.db.collection("Exams").where("user_id", "==", user_id).stream()
+            for doc in docs:
+                return True, doc.to_dict() 
+            return False, "Kayıtlı bir sınav takvimi bulunamadı."
+        except Exception as e:
+            return False, f"Hata: {str(e)}"
+
+    def delete_exam_schedule(self, user_id):
+        """Takvimi siler ve Courses tablosundaki tüm tarih ve notları temizler."""
+        try:
+            docs = self.db.collection("Exams").where("user_id", "==", user_id).stream()
+            deleted_count = 0
+            
+            for doc in docs:
+                exam_data = doc.to_dict()
+                exams_list = exam_data.get("exams", [])
+                
+                # Derslere gidip notları ve tarihleri temizle
+                for exam in exams_list:
+                    c_id = exam.get("course_id")
+                    if c_id:
+                        unique_id = f"{user_id}_{c_id}"
+                        try:
+                            self.db.collection("Courses").document(unique_id).update({
+                                "exam_date": "",
+                                "exam_grades": {}
+                            })
+                        except Exception:
+                            pass 
+                            
+                doc.reference.delete()
+                deleted_count += 1
+            
+            if deleted_count > 0:
+                return True, "Sınav takvimi silindi ve ders kartlarındaki notlar temizlendi."
+            return True, "Silinecek eski bir takvim bulunamadı."
+        except Exception as e:
+            return False, f"Takvim silme hatası: {str(e)}"
+    
+    def get_weekly_analysis(self, user_id):
+        from datetime import datetime, timedelta, timezone
+        try:
+            #  Zaman aralığı 'timezone aware' yaparak belirlenir
+            now = datetime.now(timezone.utc)
+            start_date = now - timedelta(days=7)
+            
+            #  FocusSessions koleksiyonundan çekilir
+            sessions = self.db.collection("FocusSessions")\
+                .where("user_id", "==", user_id)\
+                .where("timestamp", ">=", start_date).stream()
+                
+            weekly_stats = {"Pzt": 0, "Sal": 0, "Çar": 0, "Per": 0, "Cum": 0, "Cmt": 0, "Paz": 0}
+            counts = weekly_stats.copy()
+            day_map = {0: "Pzt", 1: "Sal", 2: "Çar", 3: "Per", 4: "Cum", 5: "Cmt", 6: "Paz"}
+            
+            found_any = False
+            for doc in sessions:
+                found_any = True
+                data = doc.to_dict()
+                dt = data.get("timestamp")
+                score = data.get("focus_score", 0)
+                
+                if dt:
+                    # Firestore timestamp'i yerel saate çevirerek gün bulunur
+                    local_dt = dt.astimezone() 
+                    day_name = day_map[local_dt.weekday()]
+                    weekly_stats[day_name] += score
+                    counts[day_name] += 1
+            
+            print(f"DEBUG: Seans bulundu mu? {found_any}") # Konsoldan kontrol edilir
+
+            final_data = {}
+            for day in weekly_stats:
+                if counts[day] > 0:
+                    final_data[day] = int(weekly_stats[day] / counts[day])
+                else:
+                    final_data[day] = 0
+                    
+            return True, final_data
+        except Exception as e:
+            print(f"HATA: {e}")
+            return False, str(e)
+    def get_course_risk_analysis(self, user_id):
+        """SRS 3.2.8.4: Ders bazlı hedef not ve performans risk analizi yapar."""
+        try:
+            # 1. Kullanıcının aktif derslerini çek
+            success_c, courses = self.get_courses(user_id)
+            # 2. Haftalık odak istatistiklerini çek
+            success_h, focus_stats = self.get_weekly_analysis(user_id) 
+            
+            if not success_c: return False, "Dersler alınamadı."
+            
+            # Tüm odaklanma geçmişinin genel ortalamasını bul
+            general_avg_focus = sum(focus_stats.values()) / 7 if focus_stats else 50
+            
+            analysis_results = []
+            for course in courses:
+                if not course.get("is_active"): continue
+                
+                target = course.get("target_grade", 60) # Kullanıcının belirlediği hedef
+                
+                # RİSK HESABI: Hedef yüksek ama odaklanma genel ortalaması düşükse risk artar
+                # Bu formül SRS 3.2.7'deki verimsizlik enerjisiyle paralel çalışır.
+                risk_score = (target / 100) * (100 - general_avg_focus)
+                
+                status = "Güvenli"
+                color = "#00e5a0" # Yeşil
+                if risk_score > 40:
+                    status = "Yüksek Risk"
+                    color = "#ff6b35" # Turuncu/Kırmızı
+                elif risk_score > 25:
+                    status = "Dikkat"
+                    color = "#f59e0b" # Sarı
+                
+                analysis_results.append({
+                    "name": course.get("course_name"),      
+                    "course_name": course.get("course_name"), 
+                    "target": target,
+                    "status": status,
+                    "color": color
+                })
+            return True, analysis_results
+        except Exception as e:
+            print(f"Risk Analiz Hatası: {e}")
+            return False, str(e)
+
+    # ==========================================
+    # IVR-REQ-02: Ders bazlı performans raporlaması
+    # ==========================================
+    def get_course_performance_stats(self, user_id: str):
+        """
+        IVR-REQ-02: Her aktif ders için ortalama odak skoru ve toplam çalışma
+        süresini hesaplar. Döndürdüğü veri doğrudan istatistik paneline beslenir.
+        """
+        try:
+            sessions = (
+                self.db.collection("FocusSessions")
+                .where("user_id", "==", user_id)
+                .where("status", "==", "Completed")
+                .get()
+            )
+
+            # course_id bazında grupla
+            course_map: dict[str, dict] = {}
+            for doc in sessions:
+                d        = doc.to_dict()
+                cid      = d.get("course_id", "")
+                score    = d.get("focus_score", 0)
+                duration = d.get("actual_focus_time", 0)
+
+                if not cid:
+                    continue
+
+                if cid not in course_map:
+                    course_map[cid] = {
+                        "course_id"   : cid,
+                        "total_score" : 0.0,
+                        "total_time"  : 0.0,
+                        "session_count": 0,
+                    }
+
+                course_map[cid]["total_score"]   += score
+                course_map[cid]["total_time"]    += duration
+                course_map[cid]["session_count"] += 1
+
+            # Kurs adlarını ekle
+            success_c, courses = self.get_courses(user_id)
+            name_map = {}
+            if success_c:
+                name_map = {
+                    c.get("course_id", ""): c.get("course_name", "")
+                    for c in courses
+                    if isinstance(c, dict)
+                }
+
+            results = []
+            for cid, stats in course_map.items():
+                n = stats["session_count"]
+                results.append({
+                    "course_id"    : cid,
+                    "course_name"  : name_map.get(cid, cid),
+                    "avg_focus"    : round(stats["total_score"] / n, 1) if n > 0 else 0,
+                    "total_minutes": round(stats["total_time"], 1),
+                    "session_count": n,
+                })
+
+            return True, results
+        except Exception as e:
+            print(f"IVR-REQ-02 Hatası: {e}")
+            return False, str(e)
+
+    # ==========================================
+    # IVR-REQ-03: Dikkat dağıtıcı uygulama analizi (Top-3)
+    # ==========================================
+    def get_top_violating_apps(self, user_id: str, top_n: int = 3):
+        """
+        IVR-REQ-03: WhitelistSessions koleksiyonunu tarayarak en çok ihlale
+        neden olan ilk N uygulamayı ve toplam ihlal sürelerini döndürür.
+        """
+        try:
+            sessions = (
+                self.db.collection("WhitelistSessions")
+                .where("user_id", "==", user_id)
+                .get()
+            )
+
+            app_violations: dict[str, int] = {}  # exe_name → toplam ihlal saniyesi
+
+            for doc in sessions:
+                d          = doc.to_dict()
+                violations = d.get("violations", [])
+
+                for v in violations:
+                    app_name = v.get("app_name", "").strip()
+                    duration = int(v.get("duration_seconds", 0))
+                    if app_name:
+                        app_violations[app_name] = (
+                            app_violations.get(app_name, 0) + duration
+                        )
+
+            # En yüksek ihlal süresine göre sırala
+            ranked = sorted(
+                app_violations.items(), key=lambda x: x[1], reverse=True
+            )[:top_n]
+
+            results = [
+                {"app_name": name, "total_violation_seconds": secs}
+                for name, secs in ranked
+            ]
+            return True, results
+        except Exception as e:
+            print(f"IVR-REQ-03 Hatası: {e}")
+            return False, str(e)
+
+    # ==========================================
+    # IVR-REQ-04: Aylık trend (son 30 gün)
+    # ==========================================
+    def get_monthly_analysis(self, user_id: str):
+        """
+        IVR-REQ-04: Son 30 günün odaklanma trend verilerini haftalık
+        dilimlere gruplandırarak döndürür.
+        Döndürülen yapı: {'Hafta 1': avg_score, 'Hafta 2': ..., ...}
+        """
+        from datetime import datetime, timedelta, timezone
+        try:
+            now       = datetime.now(timezone.utc)
+            month_ago = now - timedelta(days=30)
+
+            sessions = (
+                self.db.collection("FocusSessions")
+                .where("user_id", "==", user_id)
+                .where("timestamp", ">=", month_ago)
+                .get()
+            )
+
+            week_totals: dict[str, list[float]] = {
+                "Hafta 1": [], "Hafta 2": [], "Hafta 3": [], "Hafta 4": []
+            }
+
+            for doc in sessions:
+                d     = doc.to_dict()
+                ts    = d.get("timestamp")
+                score = d.get("focus_score", 0)
+                if not ts:
+                    continue
+
+                days_ago = (now - ts.astimezone(timezone.utc)).days
+                if   days_ago < 8:  week_totals["Hafta 4"].append(score)
+                elif days_ago < 15: week_totals["Hafta 3"].append(score)
+                elif days_ago < 22: week_totals["Hafta 2"].append(score)
+                else:               week_totals["Hafta 1"].append(score)
+
+            result = {
+                week: (round(sum(s) / len(s), 1) if s else 0)
+                for week, s in week_totals.items()
+            }
+            return True, result
+        except Exception as e:
+            print(f"IVR-REQ-04 Hatası: {e}")
+            return False, str(e)
