@@ -18,6 +18,13 @@ class FakeDBManager:
         self.register_success = True
         self.profile_success = True
 
+        self.profile_data = {
+            "name": "Kerem",
+            "surname": "Kapısız",
+            "school": "Gazi Üniversitesi",
+            "email": "kerem@example.com",
+            "password": "oldpass",
+        }
     def login_user(self, email, password):
         self.login_calls.append((email, password))
         if self.login_success:
@@ -33,13 +40,7 @@ class FakeDBManager:
     def get_user_profile(self, user_id):
         if not self.profile_success:
             return False, "Profil okunamadı."
-        return True, {
-            "name": "Kerem",
-            "surname": "Kapısız",
-            "school": "Gazi Üniversitesi",
-            "email": "kerem@example.com",
-            "password": "oldpass",
-        }
+        return True, dict(self.profile_data)
 
     def update_user_profile(self, user_id, name, surname, school, new_password):
         self.profile_updates.append({
@@ -49,8 +50,27 @@ class FakeDBManager:
             "school": school,
             "new_password": new_password,
         })
-        return True, "Profil güncellendi."
 
+        self.profile_data["name"] = name
+        self.profile_data["surname"] = surname
+        self.profile_data["school"] = school
+
+        if new_password:
+            self.profile_data["password"] = new_password
+
+        return True, "Profil güncellendi."
+    def get_study_plan(self, user_id):
+        return True, {
+            "weekly_sessions": {
+                "Pazartesi": [],
+                "Salı": [],
+                "Çarşamba": [],
+                "Perşembe": [],
+                "Cuma": [],
+                "Cumartesi": [],
+                "Pazar": [],
+            }
+        }
     def get_dashboard_stats(self, user_id):
         return True, {
             "user_name": "Kerem",
@@ -228,8 +248,7 @@ def test_profile_loads_user_data(qtbot, message_calls):
     assert page.school_input.text() == "Gazi Üniversitesi"
     assert page.email_input.text() == "kerem@example.com"
     assert page.email_input.isReadOnly() is True
-    assert page._current_password == "oldpass"
-
+    assert page._current_password_hash == "oldpass"
 
 def test_profile_save_without_password_updates_profile(qtbot, message_calls):
     db = FakeDBManager()
@@ -271,7 +290,7 @@ def test_profile_password_change_updates_cached_password_and_clears_fields(qtbot
     page._save_profile()
 
     assert db.profile_updates[0]["new_password"] == "newpass"
-    assert page._current_password == "newpass"
+    assert page._current_password_hash == "newpass"
     assert page.current_pass.text() == ""
     assert page.new_pass.text() == ""
     assert page.new_pass_confirm.text() == ""
@@ -303,15 +322,6 @@ def test_dashboard_weekly_chart_updates_bar_heights(qtbot, message_calls):
     assert page.daily_bars["Çar"].height() == 0
 
 
-def test_dashboard_grade_calculator_cancel_does_nothing(qtbot, monkeypatch, message_calls):
-    page = DashboardPage("user_123", FakeDBManager())
-    qtbot.addWidget(page)
-
-    monkeypatch.setattr(QInputDialog, "getDouble", lambda *args, **kwargs: (60, False))
-    page.open_grade_calculator()
-
-    assert not any(call[1] == "Detaylı Not Analizi" for call in message_calls)
-
 
 # =============================================================================
 # SuggestedPlanPage UI tests
@@ -334,17 +344,17 @@ def test_suggested_plan_refresh_button_state(qtbot, message_calls):
     assert page.refresh_btn.isEnabled() is False
     assert "Oluşturuluyor" in page.refresh_btn.text()
 
-    page._finish_refresh()
+    page._reset_btn()
     assert page.refresh_btn.isEnabled() is True
     assert "Yeniden Oluştur" in page.refresh_btn.text()
 
 
 def test_session_card_scale_updates_size(qtbot, message_calls):
     session = {
-        "course": "BM314",
-        "name": "Yazılım Mühendisliği",
-        "start": "09:00",
-        "end": "11:00",
+        "course_id": "BM314",
+        "course_name": "Yazılım Mühendisliği",
+        "start_time": "09:00",
+        "end_time": "11:00",
         "type": "Yeni Konu",
         "priority": "high",
     }

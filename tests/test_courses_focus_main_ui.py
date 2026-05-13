@@ -25,6 +25,7 @@ class FakeHeadTracker:
         self.face_missing = FakeSignal()
         self.error_occurred = FakeSignal()
         self.frame_processed = FakeSignal()
+        self.low_light_detected = FakeSignal()
         self.started = False
         self.stopped = False
         self.is_running = False
@@ -75,6 +76,7 @@ class FakeDBManager:
         self.focus_session_ids = []
         self.focus_sessions = []
         self.study_plans = []
+        self.completed_sessions = []
         self.deleted_courses = []
         self.courses = [
             {
@@ -138,7 +140,40 @@ class FakeDBManager:
     def save_study_plan(self, **kwargs):
         self.study_plans.append(kwargs)
         return True, "Plan saved."
+    
+    def mark_session_completed(
+        self,
+        user_id,
+        day_name,
+        session_id,
+        course_id,
+        planned_duration,
+        actual_duration,
+        whitelist_violations,
+    ):
+        self.completed_sessions.append({
+            "user_id": user_id,
+            "day_name": day_name,
+            "session_id": session_id,
+            "course_id": course_id,
+            "planned_duration": planned_duration,
+            "actual_duration": actual_duration,
+            "whitelist_violations": whitelist_violations,
+        })
+        return True, "Session marked completed."
 
+    def get_study_plan(self, user_id):
+        return True, {
+            "weekly_sessions": {
+                "Pazartesi": [],
+                "Salı": [],
+                "Çarşamba": [],
+                "Perşembe": [],
+                "Cuma": [],
+                "Cumartesi": [],
+                "Pazar": [],
+            }
+        }
     def update_course_difficulty(self, user_id, course_id, direction):
         return True, "Difficulty updated."
 
@@ -395,7 +430,7 @@ def test_focus_page_start_and_end_session_updates_ui_and_services(qtbot, monkeyp
     assert whitelist.stopped is True
     assert page.course_combo.isEnabled() is True
     assert "Başlat" in page.start_btn.text()
-    assert db.focus_sessions[0]["actual_focus_time"] == 5
+    assert db.completed_sessions[0]["actual_duration"] == pytest.approx(5 / 60.0)
 
 
 def test_focus_page_focus_changed_updates_state_and_violation_count(qtbot, monkeypatch, message_calls):
