@@ -16,11 +16,20 @@ from ui.login_window import LoginWindow
 from ui.main_window import MainWindow
 from ui.styles import APP_STYLE
 
+def on_logout():
+    login_win.login_password.clear()
+    login_win.login_error.setText("")
+    login_win.stack.setCurrentIndex(0)
+    login_win.show()
+
 def on_login_success(user_id):
     login_win.hide()
-    # User ID ve veritabanı yöneticisi ana pencereye aktarılır
+
     main_win = MainWindow(user_id, db)
     main_win.setStyleSheet(APP_STYLE)
+
+    main_win.logout_requested.connect(on_logout)
+
     main_win.show()
     app._main_win = main_win
 
