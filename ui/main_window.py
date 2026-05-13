@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QStackedWidget, QFrame, QMessageBox,
     QSizePolicy
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
 # Menü sıralaması ve isimler güncellendi (Notlar Eklendi)
@@ -22,6 +22,7 @@ NAV_ITEMS = [
 ]
 
 class MainWindow(QMainWindow):
+    logout_requested = pyqtSignal()
     def __init__(self, user_id, db_manager):
         super().__init__()
         self.user_id = user_id
@@ -32,7 +33,7 @@ class MainWindow(QMainWindow):
         self._nav_buttons: dict[str, QPushButton] = {}
         self._build_ui()
         self._navigate("dashboard") 
-
+    
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
@@ -156,8 +157,13 @@ class MainWindow(QMainWindow):
             btn.style().unpolish(btn); btn.style().polish(btn)
 
     def _logout(self):
-        ans = QMessageBox.question(self, "Çıkış",
+        ans = QMessageBox.question(
+            self,
+            "Çıkış",
             "Oturumu kapatmak istiyor musunuz?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
         if ans == QMessageBox.StandardButton.Yes:
+            self.logout_requested.emit()
             self.close()
